@@ -198,13 +198,52 @@ RDMA 网卡（RNIC）在执行远程读写操作时，并不能像 CPU 那样通
 
 RDMA 链路执行器的设计实现了高性能、低延迟的 GPU-to-GPU 数据传输，是 \sysname 在多节点推理场景中性能表现的重要基础。
 
-% \section{NVLink 链路执行器设计（TODO）}
-% \subsection{统一接口的兼容设计}
-% \subsection{执行器实现方向}
-% \subsection{扩展性讨论}
+\section{NVLink 链路执行器设计}
 
-% \section{流控机制与可靠性设计}
+与 RDMA 链路执行器相比，NVLink 链路执行器的执行流有所不同。NVLink 通信发生在同一台节点内部通过 NVLink 连接的多 GPU 之间，其数据面不再通过 RDMA 网卡进行，也不存在远端 Completion Queue 等 RDMA 特有的语义。得益于 GPU 之间原生的 Peer-to-Peer 访问能力以及 CUDA IPC 提供的跨进程显存共享机制，NVLink 链路执行器无需构造 Queue Pair，也无需处理 RDMA 报文与多个 Completion Queue 控制的复杂状态机，而是将整个链路简化为控制面共享内存 + 数据面 GPU copy engine 负责数据传输的双层结构。
 
-% \section{资源管理与内存模型}
+基于这一特性，\sysname 在 NVLink 链路采用发送端驱动的执行方式：Sender 负责主动向 Receiver 发送即将进行通信的内存地址元数据，Receiver 由本地运行时线程池进行轮询，接收 Sender 发送的共享内存地址元数据，再由后台拷贝线程调用 cudaMemcpy 使用 GPU copy engine 完成异步的数据面传输。整个通信均不占用 GPU SM，从而保证推理计算和通信传输之间不存在竞争。
 
-% \section{本章小结}
+\subsection{执行流程概述}
+
+NVLink 执行器仍然面向应用层提供 \texttt{send()} 与 \texttt{recv()} 的双向通信接口，但内部的控制语义更接近于参数交换之后 CPU 发起拷贝。当应用层调用 \texttt{send()} 时，发送方首先将待传输缓冲区的 GPU 地址信息封装为一个命令。此处的地址通常由 \texttt{cudaIpcGetMemHandle()} 获取的 \texttt{cudaIpcMemHandle\_t} 构成，也可能直接使用 Peer Memory 中的设备指针。
+
+接下来需要通过带外通信（Out-of-band Communication，OOB Communication）将命令传输给接收方。由于在 NVLink 执行器面向单节点多 GPU 的场景，可以通过主机进程间共享内存实现高效的数据传输，因此为了实现高效的控制面带外通信性能， \sysname 基于进程间共享内存实现了一个单生产者单消费者队列，Sender 为生产者，Receiver 为消费者。在命令被写入进程间共享内存的单生产者单消费者队列（SPSC Queue）之后，会立即对 Receiver 可见。
+
+接收方的调度完全由本地线程池驱动。线程池中的轮询线程在每次轮询时，尝试从共享内存 SPSC 队列中取出远端 Sender 投递的命令，并将其放入本地的远端请求队列。同时，应用层调用 \texttt{recv()} 时产生的本地接收请求也通过并发队列进入另一条本地队列。NVLink 执行器内部的匹配逻辑会在两类队列之间根据 \texttt{unique\_id} 进行匹配，将“远端发送 + 本地接收”组成一条拷贝任务（Copy Task），随后将该任务提交给后台拷贝线程等待执行。
+
+这一流程在设计上与 RDMA 执行器保持一致，以配对的方式驱动任务生成，而且同样采用事件通知机制实现异步语义，但控制路径更轻量也更直接。
+
+\subsection{后台拷贝线程与数据面传输}
+
+NVLink 执行器负责执行数据搬运的是后台拷贝线程（Copying Thread）。由于拷贝线程位于 Receiver 侧，在初始化时只需要设置一次 CUDA device 并初始化上下文（CUDA context）。在初始化完成之后，该线程阻塞式等待在任务队列上，从任务队列中取出一条 Copy Task 进行执行。取出的 Copy Task 通过 \texttt{cudaIpcOpenMemHandle()} 或 Peer Memory 机制获得远端发送方 GPU 缓冲区的访问权限。随后，线程在本地 GPU 上调用 \texttt{cudaMemcpy} 或 \texttt{cudaMemcpyAsync}，利用 GPU 内部的 copy engine 执行 GPU-to-GPU 内存拷贝。
+
+需要强调的是，这一拷贝不会通过 GPU kernel 实现计算式搬运，因此并不涉及 GPU 流式多处理器（SM）。NVLink 链路上的数据传输完全由 GPU copy engine 实现，属于硬件级搬移，与 RNIC 发起的 RDMA 传输在抽象层级上具备一致性。这样的 SM-free 特性保证了不会占用的计算资源，因此不影响推理任务的高效执行，使得 \sysname 在 NVLink 环境下同样实现了计算与通信的完全解耦。
+
+当拷贝完成后，Copying Thread 会执行两类通知操作:
+
+\begin{enumerate}
+    \item 通过任务内部绑定的本地 \texttt{Event} 对象向应用接口层返回拷贝完成信号；
+    \item 通过另一条共享内存 SPSC 队列向发送方回传“任务完成”的通知，使发送方能通过事件机制得知整个传输的结束。
+\end{enumerate}
+
+从应用层的视角看，NVLink 传输路径与 GPU Direct RDMA 传输路径在语义上保持完全一致，从而统一了 \sysname 的上层接口抽象。
+
+\subsection{拷贝线程的可扩展性}
+
+如果采用阻塞式拷贝（\texttt{cudaMemcpy}），对任意一条连接都创建一个独立的拷贝线程，在拷贝线程内部阻塞式调用 \texttt{cudaMemcpy}，那么在单节点多 GPU 场景下，线程数量将随着 GPU 数量的平方增长，导致 CPU 负担过重。且线程切换存在开销，可扩展性较差，在 GPU 数量增多的时候，影响整体性能。例如，如果系统中存在 $N$ 块 GPU，那么总共需要 $N \times (N - 1)$ 条拷贝线程来处理所有可能的 GPU-to-GPU 拷贝任务。
+
+NVLink 执行器的线程组织结构遵循单 Dst 多 Src 的设计。如果单节点中存在 $N$ 块 GPU，且任意一块 GPU 都具备访问节点内其他 GPU Peer Memory 访问能力，那么每个 GPU 都只需要一条独立的拷贝线程，用来处理其作为目标 GPU 时的所有拷贝任务。这样，总共需要 $N$ 个 Copying Thread，而非 $N \times (N - 1)$ 条。每条线程都绑定其所属 GPU 的 CUDA context，并使用该 GPU 的异步 copy engine 为所有源 GPU 的请求提供服务。
+
+这种设计将线程数量与 GPU 数量一一对应，并将所有传入某个 GPU 的流量收敛到该 GPU 的单个 Copying Thread 之上，避免了跨线程的竞争以及过度的上下文切换，使整体架构更具可扩展性。在实际部署中，如 NVSwitch 互联的 8-GPU 拓扑或 HGX 结构上，这种线程布局能够稳定支撑多路并发传输任务而不产生瓶颈。
+
+\subsection{异步化与进一步优化}
+
+Copying Thread 使用同步的 \texttt{cudaMemcpy} 发起拷贝，即线程必须阻塞直到数据搬移完成。为了进一步提升吞吐，
+并与 GPU 异步执行模型保持一致，NVLink 执行器可以将同步拷贝替换为异步拷贝 \texttt{cudaMemcpyAsync}，并结合 CUDA event 完成通知，实现多路复用的效果。
+
+在这种模式下，Copying Thread 可以在同一 CUDA stream 上连续提交多个拷贝请求，而无需等待每个请求完成才继续执行。线程仅需记录每个任务对应的 CUDA event，当事件达到完成状态时再触发 \texttt{Event notify} 或向 Sender 回传确认。借助异步拷贝，NVLink 执行器能够在保持 SM-free 的前提下实现高并发、高吞吐的传输能力，其运行机制与现代 GPU 调度框架（如 CUDA Graph 或 NCCL P2P pipeline）更加接近。
+
+\subsection{小结}
+
+NVLink 链路执行器在控制面上使用进程间共享内存实现了极低开销的跨进程参数交换，在数据面上依赖 GPU Peer Memory 与异步拷贝实现了完全不占用 SM 的高带宽内存搬移。其设计与 RDMA 链路执行器在接口语义上保持一致，在实现路径上充分利用了单机 GPU 互联环境的硬件特性，构建出一个结构简洁而性能极高的 GPU-to-GPU 传输方案。对于大模型推理中频繁出现的张量广播、模型状态同步与分片通信任务而言，NVLink 执行器为 \sysname 提供了极具优势的单机多 GPU 通信能力。
