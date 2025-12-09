@@ -15,8 +15,23 @@
 
 % 学士论文额外设置
 % \usepackage{sjtuthesis-bachelor}
-\newcommand{\todo}[1]{\textcolor{red}{\textbf{\#TODO: #1}}}
-\newcommand{\sysname}{\textcolor{red}{\textbf{PICKLE}}}
+\usepackage{todonotes}
+\setuptodonotes{fancyline}
+\newcommand{\sysname}{\textcolor{green}{\textbf{PICKLE}}}
+\usepackage{listings}
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\bfseries\color{blue!70!black},
+  commentstyle=\itshape\color{green!50!black},
+  stringstyle=\color{red!60!black},
+  showstringspaces=false,
+  breakatwhitespace=false,
+  breaklines=true,
+  frame=single,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  captionpos=b
+}
 
 % 论文基本配置，加载宏包等全局配置
 \input{setup}
@@ -38,7 +53,7 @@
 \frontmatter
 
 % 摘要
-\input{contents/0-abstract}
+% \input{contents/0-abstract}
 
 % 目录
 \tableofcontents
