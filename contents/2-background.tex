@@ -6,126 +6,264 @@
 
 \subsection{Transformer架构}
 
-大语言模型（LLMs）的重大突破始于Transformer架构，该架构彻底改变了自然语言处理（NLP）领域，并成为当前几乎所有先进AI模型的基础。一个标准的Transformer层由两个关键子层构成：注意力层（Attention）和前馈神经网络（Feed-Forward Network, FFN）。
+大语言模型（LLMs）的重大突破始于Transformer架构，该架构彻底改变了自然语言处理（NLP）领域，并成为当前几乎所有先进AI模型的基础。
+一个标准的Transformer层由两个关键子层构成：注意力层（Attention）和前馈神经网络（Feed-Forward Network, FFN）。
 
-Transformer架构的核心在于注意力机制（Attention），该机制允许模型在处理一个词元（token）时，能够同时考虑输入序列中的所有其他词元，从而有效捕捉长距离依赖关系。在 Attention 层中，每个输入向量 x 被线性变换为三个独立的向量：查询（Query, Q）、键（Key, K）和值（Value, V）。通过计算Q与K之间的点积得到注意力分数，再经过softmax函数归一化后，作为权重对V进行加权求和，然后经过输出投影（Out Projection, O）最终产生该层的输出，这使得模型能够动态地关注输入中最相关的信息。
+Transformer架构的核心在于注意力机制（Attention），该机制允许模型在处理一个词元（token）时，
+能够同时考虑输入序列中的所有其他词元，从而有效捕捉长距离依赖关系。
+在 Attention 层中，每个输入向量 x 被线性变换为三个独立的向量：查询（Query, Q）、键（Key, K）和值（Value, V）。
+通过计算Q与K之间的点积得到注意力分数，再经过softmax函数归一化后，作为权重对V进行加权求和，
+然后经过输出投影（Out Projection, O）最终产生该层的输出，这使得模型能够动态地关注输入中最相关的信息。
 
-FFN 层紧随 Attention 层之后，通常由两个线性变换（全连接层）和一个非线性激活函数构成。具体而言，给定 Attention 层的输出 \( x \in \mathbb{R}^{d_{\text{model}}} \)，FFN 首先通过一个从 \( d_{\text{model}} \) 到 \( d_{\text{ff}} \) 的线性映射（通常 \( d_{\text{ff}} = 4 \times d_{\text{model}} \)），再施加如 GeLU 或 ReLU 等激活函数，随后通过第二个线性映射将其投影回原始维度 \( d_{\text{model}} \)。形式化地，FFN 可表示为：
+FFN 层紧随 Attention 层之后，通常由两个线性变换（全连接层）和一个非线性激活函数构成。
+具体而言，给定 Attention 层的输出 \( x \in \mathbb{R}^{d_{\text{model}}} \)，
+FFN 首先通过一个从 \( d_{\text{model}} \) 到 \( d_{\text{ff}} \) 的线性映射（通常 \( d_{\text{ff}} = 4 \times d_{\text{model}} \)），
+再施加如 GeLU 或 ReLU 等激活函数，随后通过第二个线性映射将其投影回原始维度 \( d_{\text{model}} \)。
+形式化地，FFN 可表示为：
 
 \[
     \text{FFN}(x) = W_2 \cdot \sigma(W_1 x + b_1) + b_2,
 \]
 
-其中 \( W_1 \in \mathbb{R}^{d_{\text{ff}} \times d_{\text{model}}} \)、\( W_2 \in \mathbb{R}^{d_{\text{model}} \times d_{\text{ff}}} \) 为可学习参数，\( \sigma(\cdot) \) 为非线性激活函数。尽管结构简单，FFN 层在 Transformer 中承担着对注意力机制提取的上下文信息进行非线性特征变换与增强的关键作用，其参数量通常占整个 Transformer 层的绝大部分。此外，FFN 层在各位置上独立作用，不涉及跨 token 的交互，因此可高度并行化，适合在 GPU 等硬件加速器上高效执行。
+其中 \( W_1 \in \mathbb{R}^{d_{\text{ff}} \times d_{\text{model}}} \)、
+\( W_2 \in \mathbb{R}^{d_{\text{model}} \times d_{\text{ff}}} \) 为可学习参数，
+\( \sigma(\cdot) \) 为非线性激活函数。
+尽管结构简单，FFN 层在 Transformer 中承担着对注意力机制提取的上下文信息进行非线性特征变换与增强的关键作用，
+其参数量通常占整个 Transformer 层的绝大部分。此外，FFN 层在各位置上独立作用，不涉及跨 token 的交互，
+因此可高度并行化，适合在 GPU 等硬件加速器上高效执行。
 
 \todo{配transformer架构图}
 
 \subsection{大模型推理系统}
 
-Transformer架构在推理阶段存在显著的性能瓶颈。首先，标准注意力机制的计算复杂度随序列长度n呈平方方增长，即$O(n^2)$，当处理长文本时，计算成本会急剧上升，导致推理速度变慢。其次，Transformer在推理过程中会产生的巨大内存消耗：为了加速逐个生成新词元的自回归过程，避免重复计算先前已处理过的词元的K和V向量，通常采用空间换取时间的方式，推理系统系统会将这些K和V矩阵缓存起来，形成所谓的“键值缓存”（KV Cache）。KV Cache的大小与多个因素成正比：序列长度（Sequence Length）、批处理大小（Batch Size）、模型层数（Number of Layers）、注意力头的维度（Head Dimension）以及注意力头的数量（Number of KV Heads），其计算公式为 $\text{cache\_size} = 2 \times \text{seq\_len} \times \text{batch\_size} \times \text{num\_layers} \times \text{num\_kv\_head} \times \text{head\_dim} \times \text{sizeof}(\text{dtype})$。对于一个拥有数万亿参数的大模型而言，仅KV Cache的内存占用就可能超过模型本身的权重大小，成为限制上下文长度、批处理大小和并发请求数量的主要障碍。例如，一个Llama-3 70B模型在批处理大小为10、序列长度为8192的输入序列时，KV Cache本身就需要约 25GB 的显存。KV Cache不仅是推理效率的核心，更是整个系统资源分配的关键制约因素。
+Transformer架构在推理阶段存在显著的性能瓶颈。
+首先，标准注意力机制的计算复杂度随序列长度n呈平方方增长，即$O(n^2)$，当处理长文本时，计算成本会急剧上升，
+导致推理速度变慢。其次，Transformer在推理过程中会产生的巨大内存消耗：
+为了加速逐个生成新词元的自回归过程，避免重复计算先前已处理过的词元的K和V向量，通常采用空间换取时间的方式，
+推理系统系统会将这些K和V矩阵缓存起来，形成所谓的“键值缓存”（KV Cache）。
+KV Cache的大小与多个因素成正比：序列长度（Sequence Length）、批处理大小（Batch Size）、模型层数（Number of Layers）、
+注意力头的维度（Head Dimension）以及注意力头的数量（Number of KV Heads），
+其计算公式为
+$\text{cache\_size} = 2 \times \text{seq\_len} \times \text{batch\_size} \times \text{num\_layers} \times \text{num\_kv\_head} \times \text{head\_dim} \times \text{sizeof}(\text{dtype})$。
+对于一个拥有数万亿参数的大模型而言，仅KV Cache的内存占用就可能超过模型本身的权重大小，
+成为限制上下文长度、批处理大小和并发请求数量的主要障碍。
+例如，一个Llama-3 70B模型在批处理大小为10、序列长度为8192的输入序列时，KV Cache本身就需要约 25GB 的显存。
+KV Cache不仅是推理效率的核心，更是整个系统资源分配的关键制约因素。
 
-为了应对这一挑战，现代大模型推理系统通常将整个推理过程划分为两个截然不同的阶段：预填充（Prefill）和解码（Decode）。预填充阶段是推理的初始步骤，系统一次性处理用户提供的完整输入提示（prompt），将其通过Transformer模型的所有层，最终生成用于后续生成的KV Cache。这个阶段涉及大量的矩阵-矩阵乘法运算，因此其本质上是一个计算密集型任务。相比之下，解码阶段则是一个顺序执行的过程，模型根据已有的KV Cache，逐个生成新的词元。每一步只处理一个新词元，利用缓存的K和V向量进行增量式的注意力计算，从而避免了对整个历史序列的重复计算。解码阶段的特点是内存密集型而非计算密集型，因为每次生成都需要从高速但容量有限的GPU显存中读取庞大的KV Cache数据。理解这两个阶段的根本差异至关重要，因为它们决定了优化策略的侧重点：预填充阶段的优化侧重于最大化计算吞吐量，而解码阶段的优化则聚焦于最小化内存访问延迟和最大化内存带宽利用率。正是由于这种内在的不均衡，催生了诸如连续批处理等复杂的调度算法，以确保GPU在面对长短不一的生成任务时仍能保持高效运行。
+为了应对这一挑战，现代大模型推理系统通常将整个推理过程划分为两个截然不同的阶段：预填充（Prefill）和解码（Decode）。
+预填充阶段是推理的初始步骤，系统一次性处理用户提供的完整输入提示（prompt），将其通过Transformer模型的所有层，
+最终生成用于后续生成的KV Cache。这个阶段涉及大量的矩阵-矩阵乘法运算，因此其本质上是一个计算密集型任务。
+相比之下，解码阶段则是一个顺序执行的过程，模型根据已有的KV Cache，逐个生成新的词元。每一步只处理一个新词元，
+利用缓存的K和V向量进行增量式的注意力计算，从而避免了对整个历史序列的重复计算。
+解码阶段的特点是内存密集型而非计算密集型，因为每次生成都需要从高速但容量有限的GPU显存中读取庞大的KV Cache数据。
+理解这两个阶段的根本差异至关重要，因为它们决定了优化策略的侧重点：
+预填充阶段的优化侧重于最大化计算吞吐量，而解码阶段的优化则聚焦于最小化内存访问延迟和最大化内存带宽利用率。
+正是由于这种内在的不均衡，催生了诸如连续批处理等复杂的调度算法，以确保GPU在面对长短不一的生成任务时仍能保持高效运行。
 
 \subsection{大模型推理的通信需求}
 
 \todo{详细讲一下 TP 中 All-Reduce、EP Dispatch-Combine、以及Prefill-Decode Disaggregation 传 KV Cache 推理的通信需求。}
 
-大模型推理的分布式部署依赖多种并行策略（如张量并行 TP、专家并行 EP 等），不同并行模式下的通信语义、数据量与延迟敏感特性存在显著差异。同时，预填充（Prefill）与解码（Decode）阶段的计算范式差异（前者批处理并行、后者逐 token 串行）进一步加剧了通信需求的复杂性。本节将聚焦张量并行（TP）、专家并行（EP）及预填充-解码分离（Prefill-Decode Disaggregation）三种核心场景，详细分析其通信需求的本质特征。
+大模型推理的分布式部署依赖多种并行策略（如张量并行 TP、专家并行 EP 等），
+不同并行模式下的通信语义、数据量与延迟敏感特性存在显著差异。
+同时，预填充（Prefill）与解码（Decode）阶段的计算范式差异（前者批处理并行、后者逐 token 串行）进一步加剧了通信需求的复杂性。
+本节将聚焦张量并行（TP）、专家并行（EP）及预填充-解码分离（Prefill-Decode Disaggregation）三种核心场景，
+详细分析其通信需求的本质特征。
 
 \subsubsection{张量并行（TP）中的 All-Reduce 通信需求}
 
-张量并行（TP）通过将模型参数部分的层内张量（如 Attention 层的投影矩阵 $W_Q/W_K/W_V/W_O$ 、FFN 层的权重矩阵 $W_1/W_2$）切分至多个设备，实现单层计算的并行加速。TP 推理的通信瓶颈集中在层间数据聚合阶段，核心依赖 All-Reduce 集合通信操作，其需求特征与计算过程深度耦合。
+张量并行（TP）通过将模型参数部分的层内张量（如 Attention 层的投影矩阵 $W_Q/W_K/W_V/W_O$ 、
+FFN 层的权重矩阵 $W_1/W_2$）切分至多个设备，实现单层计算的并行加速。
+TP 推理的通信瓶颈集中在层间数据聚合阶段，核心依赖 All-Reduce 集合通信操作，其需求特征与计算过程深度耦合。
 
 在 Transformer 层的计算流程中，All-Reduce 主要用于两个关键环节：
 
 \begin{enumerate}
-    \item Attention 层输出聚合：每个 TP Rank 仅持有部分注意力头权重矩阵和部分输出投影权重矩阵，计算得到的 Attention 输出张量同样是完整结果的一个分片。为获得全局 Attention 输出（用于后续 FFN 层计算），需通过 All-Reduce 将所有分片的局部结果求和聚合；
-    \item FFN 层输出聚合：类似地，FFN 层的中间激活张量（如第一层线性变换后的特征图）经 TP 分片并行计算后，需通过 All-Reduce 聚合为完整张量，再进入后续层归一化等流程。
+    \item Attention 层输出聚合：每个 TP Rank 仅持有部分注意力头权重矩阵和部分输出投影权重矩阵，
+          计算得到的 Attention 输出张量同样是完整结果的一个分片。
+          为获得全局 Attention 输出（用于后续 FFN 层计算），需通过 All-Reduce 将所有分片的局部结果求和聚合；
+    \item FFN 层输出聚合：类似地，FFN 层的中间激活张量（如第一层线性变换后的特征图）经 TP 分片并行计算后，
+          需通过 All-Reduce 聚合为完整张量，再进入后续层归一化等流程。
 \end{enumerate}
 
 TP 中 All-Reduce 的通信需求具有以下核心特征：
 
 \begin{itemize}
-    \item 通信数据量与张量维度强相关：通信量与切分后的数据分片大小成正比，即与模型隐藏层维度 \( d_{\text{model}} \)、序列长度 \( S \) 及批处理大小 \( B \) 正相关。以 Attention 层为例，单个 TP 分片的局部输出维度为 \( B \times S \times (d_{\text{model}}/TP\_Size) \)，All-Reduce 需传输的总数据量为 \( TP\_Size \times B \times S \times (d_{\text{model}}/TP\_Size) = B \times S \times d_{\text{model}} \)，即与分片数 \( TP\_Size \) 无关，仅由模型与输入规模决定；
-    \item 延迟敏感型与吞吐量平衡需求：在 Decode 阶段，TP 推理为逐 token 串行执行，每个 token 的生成需等待 All-Reduce 完成才能进入下一层计算，因此通信延迟直接决定了推理 latency；而在 Prefill 阶段，批处理规模大、计算密集，通信吞吐量（带宽利用率）成为核心瓶颈；
-    \item 通信与计算的重叠潜力：部分 TP 实现支持通信-计算重叠（如将 All-Reduce 的 Reduce 阶段与下一层的部分计算并行），但需通信操作具备可拆分性，这对通信协议的灵活性（如支持分段传输、增量聚合）提出了更高要求。
+    \item 通信数据量与张量维度强相关：
+          通信量与切分后的数据分片大小成正比，即与模型隐藏层维度 \( d_{\text{model}} \)、序列长度 \( S \)
+          及批处理大小 \( B \) 正相关。
+          以 Attention 层为例，单个 TP 分片的局部输出维度为 \( B \times S \times (d_{\text{model}}/TP\_Size) \)，
+          All-Reduce 需传输的总数据量为 \( TP\_Size \times B \times S \times (d_{\text{model}}/TP\_Size) = B \times S \times d_{\text{model}} \)，
+          即与分片数 \( TP\_Size \) 无关，仅由模型与输入规模决定；
+    \item 延迟敏感型与吞吐量平衡需求：
+          在 Decode 阶段，TP 推理为逐 token 串行执行，每个 token 的生成需等待 All-Reduce 完成才能进入下一层计算，
+          因此通信延迟直接决定了推理 latency；
+          而在 Prefill 阶段，批处理规模大、计算密集，通信吞吐量（带宽利用率）成为核心瓶颈；
+    \item 通信与计算的重叠潜力：部分 TP 实现支持通信-计算重叠（如将 All-Reduce 的 Reduce 阶段与下一层的部分计算并行），
+          但需通信操作具备可拆分性，这对通信协议的灵活性（如支持分段传输、增量聚合）提出了更高要求。
 \end{itemize}
 
 \subsubsection{专家并行（EP）中的 Dispatch-Combine 通信需求}
 
-专家并行（EP）针对混合专家（MoE）模型设计，将模型的 FFN 层拆分为多个独立“专家”（Expert），并分配至不同设备，核心通信操作体现为“Dispatch（分发）”与“Combine（合并）”两个阶段，其需求与专家选择机制深度绑定。
+专家并行（EP）针对混合专家（MoE）模型设计，将模型的 FFN 层拆分为多个独立“专家”（Expert），并分配至不同设备，
+核心通信操作体现为“Dispatch（分发）”与“Combine（合并）”两个阶段，其需求与专家选择机制深度绑定。
 
 MoE 模型的推理流程中，通信操作的逻辑如下：
 
 \begin{enumerate}
-    \item Dispatch 阶段：输入张量（如 Attention 层输出）首先通过“门控网络”（Gating Network）计算每个 token 对专家的选择权重，筛选出 Top-k 个目标专家（通常 \( k=8 \) ）。随后需将每个 token 的特征向量分发至其对应的目标专家设备，此过程本质是“稀疏路由”通信，仅向被选中的专家传输相关 token 数据而非全量广播；
-    \item Combine 阶段：各专家设备对接收的 token 执行 FFN 计算后，生成局部输出特征向量。需将这些局部输出按原 token 顺序传给主设备，经过 Reduce 后进行后续层的计算。此过程需解决 token 分发后的乱序重组问题，依赖额外的索引映射信息传输。
+    \item Dispatch 阶段：输入张量（如 Attention 层输出）首先通过“门控网络”（Gating Network）计算每个 token 对专家的选择权重，
+          筛选出 Top-k 个目标专家（通常 \( k=8 \) ）。
+          随后需将每个 token 的特征向量分发至其对应的目标专家设备，
+          此过程本质是“稀疏路由”通信，仅向被选中的专家传输相关 token 数据而非全量广播；
+    \item Combine 阶段：各专家设备对接收的 token 执行 FFN 计算后，生成局部输出特征向量。
+          需将这些局部输出按原 token 顺序传给主设备，经过 Reduce 后进行后续层的计算。
+          此过程需解决 token 分发后的乱序重组问题，依赖额外的索引映射信息传输。
 \end{enumerate}
 
 EP 中 Dispatch-Combine 的通信需求具有以下显著特征：
 
 \begin{itemize}
-    \item 稀疏性与动态性：通信数据量由 Top-k 选择结果决定，仅为全量传输的 \( k/E \)（\( E \) 为专家总数），稀疏性显著降低了通信开销；但专家选择结果随输入 token 动态变化（不同输入的目标专家分布不同），导致通信流向、数据量存在不确定性，需支持动态路由与弹性带宽分配；
-    \item 细粒度与低延迟优先：Decode 阶段的 EP 推理为逐 token 处理，每个 token 的 Dispatch 与 Combine 操作粒度小（单 token 特征向量维度为 \( d_{\text{model}} \)），但需快速响应以避免阻塞后续 token 生成，因此对通信延迟的敏感度高于吞吐量；而 Prefill 阶段为批处理 token 分发，需兼顾高吞吐量与低延迟；
-    \item 元数据与数据协同传输：Dispatch 阶段除传输 token 特征数据外，还需同步 token 索引、专家选择掩码等元数据，用于 Combine 阶段的有序合并；元数据虽体积小，但需与数据严格同步，否则会导致合并错误，这对通信的可靠性与时序一致性提出了严格要求。
+    \item 稀疏性与动态性：通信数据量由 Top-k 选择结果决定，仅为全量传输的 \( k/E \)（\( E \) 为专家总数），
+          稀疏性显著降低了通信开销；但专家选择结果随输入 token 动态变化（不同输入的目标专家分布不同），导致通信流向、数据量存在不确定性，需支持动态路由与弹性带宽分配；
+    \item 细粒度与低延迟优先：Decode 阶段的 EP 推理为逐 token 处理，
+          每个 token 的 Dispatch 与 Combine 操作粒度小（单 token 特征向量维度为 \( d_{\text{model}} \)），
+          但需快速响应以避免阻塞后续 token 生成，因此对通信延迟的敏感度高于吞吐量；而 Prefill 阶段为批处理 token 分发，需兼顾高吞吐量与低延迟；
+    \item 元数据与数据协同传输：Dispatch 阶段除传输 token 特征数据外，还需同步 token 索引、专家选择掩码等元数据，
+          用于 Combine 阶段的有序合并；元数据虽体积小，但需与数据严格同步，否则会导致合并错误，
+          这对通信的可靠性与时序一致性提出了严格要求。
 \end{itemize}
 
 \subsubsection{预填充-解码分离（Prefill-Decode Disaggregation）中的 KV Cache 传输需求}
 
-预填充-解码分离（Prefill-Decode Disaggregation）是一种分布式推理架构优化，核心思想是将计算密集型的 Prefill 阶段与访存密集型的 Decode 阶段分别部署在不同节点，Prefill 节点负责批量处理输入提示，Decode 节点负责逐 token 生成，其核心通信需求是 Prefill 阶段生成的 KV Cache 需跨节点完整迁移至 Decode 节点，为后续逐 token 生成上下文提供依据。
+预填充-解码分离（Prefill-Decode Disaggregation）是一种分布式推理架构优化，
+核心思想是将计算密集型的 Prefill 阶段与访存密集型的 Decode 阶段分别部署在不同节点，
+Prefill 节点负责批量处理输入提示，Decode 节点负责逐 token 生成，
+其核心通信需求是 Prefill 阶段生成的 KV Cache 需跨节点完整迁移至 Decode 节点，为后续逐 token 生成上下文提供依据。
 
 KV Cache 传输的本质是“大规模张量迁移”，其通信需求与 KV Cache 的存储特性、传输时机紧密相关：
 
 \begin{itemize}
-    \item  超大规模与高带宽需求：KV Cache 的数据量 $2 \times \text{seq\_len} \times \text{batch\_size} \times \text{num\_layers} \times \text{num\_kv\_head} \times \text{head\_dim} \times \text{sizeof}(\text{dtype})$，对于长序列、大批次的场景，单组 KV Cache 体积可达数十 GB。因此，传输过程对带宽的需求极高，需依赖高吞吐通信技术（如 RDMA、NVLink）避免成为推理瓶颈；
-    \item  延迟与一致性权衡：KV Cache 需在 Prefill 完成后、Decode 启动前全量传输完成，否则会导致 Decode 阶段阻塞，因此传输延迟直接影响端到端推理 latency；同时，KV Cache 作为上下文数据，需保证传输过程中的完整性与一致性，否则会导致生成结果错乱；
-    \item  存储与传输的协同优化：为降低传输开销，部分架构支持 KV Cache “边生成边传输”的方式，Prefill 阶段生成 KV Cache 分片时同步传输至 Decode 集群，从而隐藏通信开销。
+    \item  超大规模与高带宽需求：KV Cache 的数据量
+          $2 \times \text{seq\_len} \times \text{batch\_size} \times \text{num\_layers} \times \text{num\_kv\_head} \times \text{head\_dim} \times \text{sizeof}(\text{dtype})$，
+          对于长序列、大批次的场景，单组 KV Cache 体积可达数十 GB。
+          因此传输过程对带宽的需求极高，需依赖高吞吐通信技术（如 RDMA、NVLink）避免成为推理瓶颈；
+    \item  延迟与一致性权衡：KV Cache 需在 Prefill 完成后、Decode 启动前全量传输完成，
+          否则会导致 Decode 阶段阻塞，因此传输延迟直接影响端到端推理 latency；
+          同时，KV Cache 作为上下文数据，需保证传输过程中的完整性与一致性，否则会导致生成结果错乱；
+    \item  存储与传输的协同优化：为降低传输开销，部分架构支持 KV Cache “边生成边传输”的方式，
+          Prefill 阶段生成 KV Cache 分片时同步传输至 Decode 集群，从而隐藏通信开销。
 \end{itemize}
 
 \section{RDMA}
 
-远程直接内存访问（RDMA）是一种革命性的计算机网络通信技术，其核心思想在于彻底重构数据在分布式系统间的移动方式。与传统网络模型（TCP/IP）依赖操作系统内核进行数据搬运不同，RDMA 通过将数据传输任务完全卸载给网络接口卡（RNIC），实现了应用程序内存与远程节点内存之间的直接、高效交互。这一范式转变的根本目标是消除传统网络栈中的三大性能瓶颈：CPU 干预、内核态与用户态之间的上下文切换以及多次数据拷贝操作。RDMA 的本质并非简单地提升网络速度，而是从根本上改变了计算与通信的关系，使得网络通信成为一个近乎透明的后台任务，从而解放宝贵的计算资源专注于核心算法运算。该技术最初为高性能计算（HPC）领域设计，如今已广泛应用于人工智能、大数据分析和云存储等前沿领域。
+远程直接内存访问（RDMA）是一种革命性的计算机网络通信技术，其核心思想在于彻底重构数据在分布式系统间的移动方式。
+与传统网络模型（TCP/IP）依赖操作系统内核进行数据搬运不同，RDMA 通过将数据传输任务完全卸载给网络接口卡（RNIC），
+实现了应用程序内存与远程节点内存之间的直接、高效交互。这一范式转变的根本目标是消除传统网络栈中的三大性能瓶颈：
+CPU 干预、内核态与用户态之间的上下文切换以及多次数据拷贝操作。
+RDMA 的本质并非简单地提升网络速度，而是从根本上改变了计算与通信的关系，
+使得网络通信成为一个近乎透明的后台任务，从而解放宝贵的计算资源专注于核心算法运算。
+该技术最初为高性能计算（HPC）领域设计，如今已广泛应用于人工智能、大数据分析和云存储等前沿领域。
 
-不同于传统网络，RDMA 的实现建立在由一系列硬件抽象和软件接口构成的异步 I/O 模型之上。其基础硬件单元被称为通道适配器（Channel Adapter, CA），在实践中通常指代具备特殊功能的 RNIC。这种网卡不仅承担网络收发功能，更是一个独立的 DMA 执行单元，能够绕过主机 CPU 直接访问主内存。在软件层面，RDMA 定义了几个核心概念来管理通信资源和进程。首先是队列对（Queue Pair, QP），它是 RDMA 通信的基本端点，每个 QP 都包含一个发送队列（SQ）和一个接收队列（RQ）。应用程序通过向本地 QP 的 SQ 提交一个或多个工作请求（Work Request, WR），来指示 RNIC 需要执行的操作，例如发送数据或准备接收缓冲区。当 RNIC 成功处理完 WR 后，它会生成一个完成条目（Completion Queue Entry, CQE）并将其放入一个共享的或私有的完成队列（Completion Queue, CQ）中。应用程序随后通过轮询 CQ 来获知特定 WR 的状态，从而实现对数据传输过程的异步监控与同步。
+不同于传统网络，RDMA 的实现建立在由一系列硬件抽象和软件接口构成的异步 I/O 模型之上。
+其基础硬件单元被称为通道适配器（Channel Adapter, CA），在实践中通常指代具备特殊功能的 RNIC。
+这种网卡不仅承担网络收发功能，更是一个独立的 DMA 执行单元，能够绕过主机 CPU 直接访问主内存。
+在软件层面，RDMA 定义了几个核心概念来管理通信资源和进程。首先是队列对（Queue Pair, QP），它是 RDMA 通信的基本端点，
+每个 QP 都包含一个发送队列（SQ）和一个接收队列（RQ）。应用程序通过向本地 QP 的 SQ 提交一个或多个工作请求（Work Request, WR），
+来指示 RNIC 需要执行的操作，例如发送数据或准备接收缓冲区。当 RNIC 成功处理完 WR 后，
+它会生成一个完成条目（Completion Queue Entry, CQE）并将其放入一个共享的或私有的完成队列（Completion Queue, CQ）中。
+应用程序随后通过轮询 CQ 来获知特定 WR 的状态，从而实现对数据传输过程的异步监控与同步。
 
-为了确保安全性和资源隔离，RDMA 引入了内存区域（Memory Region, MR）和保护域（Protection Domain, PD）的概念。任何希望被其他节点通过 RDMA 访问的内存区域都必须先经过注册过程。注册时，应用程序会告知 RNIC 要使用的内存块的起始地址和长度。作为响应，RNIC 会将这些内存注册为锁页内存，防止它们在 RDMA 操作期间被操作系统换出，并将虚拟地址到物理地址的映射信息加载到自身的高速缓存中。同时，RNIC 会为该内存区域生成两个密钥：一个本地键（lkey），用于本机发起的 RDMA 操作；另一个远程键（rkey），用于其他节点进行远程访问。rkey 就像一把授权钥匙，只有持有正确 rkey 的节点才能对该内存区域执行指定的 RDMA 操作，从而构成了第一道安全防线。保护域则为一组相关的 RDMA 资源（如多个 MR、QP、CQ 等）提供了一个更高层次的安全边界。只有属于同一个 PD 的资源才能相互协作，这有效防止了未经授权的跨域访问。
+为了确保安全性和资源隔离，RDMA 引入了内存区域（Memory Region, MR）和保护域（Protection Domain, PD）的概念。
+任何希望被其他节点通过 RDMA 访问的内存区域都必须先经过注册过程。注册时，应用程序会告知 RNIC 要使用的内存块的起始地址和长度。
+作为响应，RNIC 会将这些内存注册为锁页内存，防止它们在 RDMA 操作期间被操作系统换出，并将虚拟地址到物理地址的映射信息加载到自身的高速缓存中。
+同时，RNIC 会为该内存区域生成两个密钥：一个本地键（lkey），用于本机发起的 RDMA 操作；另一个远程键（rkey），用于其他节点进行远程访问。
+rkey 就像一把授权钥匙，只有持有正确 rkey 的节点才能对该内存区域执行指定的 RDMA 操作，从而构成了第一道安全防线。
+保护域则为一组相关的 RDMA 资源（如多个 MR、QP、CQ 等）提供了一个更高层次的安全边界。
+只有属于同一个 PD 的资源才能相互协作，这有效防止了未经授权的跨域访问。
 
-RDMA API 提供了两类不同的通信模型。第一种是双边（Two-Sided）模型，其代表操作是 SEND 和 RECV。这种模式类似于传统的 RPC 调用，要求通信双方协同工作。发送方将数据写入自己的应用缓冲区，并通过 \texttt{post\_send()} 将其作为一个 WR 提交到本地的 SQ；与此同时，接收方必须预先通过 \texttt{post\_recv()} 将自己期望接收数据的缓冲区作为一个 WR 提交到本地的 RQ，以做好准备。当数据包到达接收方时，RNIC 会自动将其放置在预先注册的接收缓冲区内，并向接收方的 CQ 中投递一个完成事件。随后，接收方 RNIC 会发送一个 ACK 包确认收到数据，发送方在收到这个 ACK 后，才会在自己的 CQ 中看到其发送 WR 的完成事件。这种方式虽然同步性好，但是引入了显著的 CPU 开销，接收方的 CPU 必须主动准备接收缓冲区，在高负载的情况下可能会导致 CPU 成为通信瓶颈。
+RDMA API 提供了两类不同的通信模型。第一种是双边（Two-Sided）模型，其代表操作是 SEND 和 RECV。
+这种模式类似于传统的 RPC 调用，要求通信双方协同工作。
+发送方将数据写入自己的应用缓冲区，并通过 \texttt{post\_send()} 将其作为一个 WR 提交到本地的 SQ；
+与此同时，接收方必须预先通过 \texttt{post\_recv()} 将自己期望接收数据的缓冲区作为一个 WR 提交到本地的 RQ，以做好准备。
+当数据包到达接收方时，RNIC 会自动将其放置在预先注册的接收缓冲区内，并向接收方的 CQ 中投递一个完成事件。
+随后，接收方 RNIC 会发送一个 ACK 包确认收到数据，发送方在收到这个 ACK 后，才会在自己的 CQ 中看到其发送 WR 的完成事件。
+这种方式虽然同步性好，但是引入了显著的 CPU 开销，接收方的 CPU 必须主动准备接收缓冲区，在高负载的情况下可能会导致 CPU 成为通信瓶颈。
 
-第二种是单边（One-Sided）模型，其代表操作是 READ、WRITE 和 ATOMIC，这是 RDMA 最开创性的一点。在这种模式下，通信仅由发起方（Initiator）单方面完成，整个过程无需目标节点（Responder）的 CPU 参与。发起方只需事先通过带外信道（Out-of-band Communication，通常基于 TCP 实现）获取到目标内存的虚拟地址和 \texttt{rkey}，之后即可通过一个 WR 直接读取或写入远程节点的内存。例如，在 RDMA WRITE 操作中，发起方的 RNIC 会直接从本地源内存读取数据，封装成网络包发送出去，目标节点的 RNIC 收到后，直接将数据写入指定的远程内存地址。在这个过程中，目标节点的 CPU 处于无感知状态，不需要预先准备接收缓冲区（对于 WRITE 操作），极大地降低了延迟和 CPU 消耗。
+第二种是单边（One-Sided）模型，其代表操作是 READ、WRITE 和 ATOMIC，这是 RDMA 最开创性的一点。
+在这种模式下，通信仅由发起方（Initiator）单方面完成，整个过程无需目标节点（Responder）的 CPU 参与。
+发起方只需事先通过带外信道（Out-of-band Communication，通常基于 TCP 实现）获取到目标内存的虚拟地址和 \texttt{rkey}，
+之后即可通过一个 WR 直接读取或写入远程节点的内存。例如，在 RDMA WRITE 操作中，发起方的 RNIC 会直接从本地源内存读取数据，
+封装成网络包发送出去，目标节点的 RNIC 收到后，直接将数据写入指定的远程内存地址。
+在这个过程中，目标节点的 CPU 处于无感知状态，不需要预先准备接收缓冲区（对于 WRITE 操作），极大地降低了延迟和 CPU 消耗。
 
 \section{GPU 通信}
 
-随着深度学习模型规模的不断增加，单个 GPU 的计算能力和内存容量已难以满足大规模模型训练与推理的需求，多 GPU 系统已成为主流解决方案。为实现高效的 GPU 通信，现代 GPU 架构引入了 NVLink 与 GPU 直接远程直接内存访问（GPU Direct RDMA, GDR）技术，实现了纵向扩展（scale-up）网络与横向扩展（scale-out）网络的超高通信性能。
+随着深度学习模型规模的不断增加，单个 GPU 的计算能力和内存容量已难以满足大规模模型训练与推理的需求，多 GPU 系统已成为主流解决方案。
+为实现高效的 GPU 通信，现代 GPU 架构引入了 NVLink 与 GPU 直接远程直接内存访问（GPU Direct RDMA, GDR）技术，
+实现了纵向扩展（scale-up）网络与横向扩展（scale-out）网络的超高通信性能。
 
 \subsection{NVLink}
 
-NVLink 是 NVIDIA 开发的一种高性能芯片间互连技术，专为在 GPU 之间以及 GPU 与支持 NVLink 的 CPU（例如基于 IBM POWER 架构的处理器）之间提供高带宽、低延迟的数据传输而设计。相较于传统基于 PCIe 的通信机制，NVLink 显著提升了单节点内（intra-node）多加速器协同纵向扩展网络（scale-up network）的效率，已成为大规模 AI 训练推理、高性能计算（HPC）和内存池化等场景中的关键互联基础设施。
+NVLink 是 NVIDIA 开发的一种高性能芯片间互连技术，
+专为在 GPU 之间以及 GPU 与支持 NVLink 的 CPU（例如基于 IBM POWER 架构的处理器）之间提供高带宽、低延迟的数据传输而设计。
+相较于传统基于 PCIe 的通信机制，NVLink 显著提升了单节点内（intra-node）多加速器协同纵向扩展网络（scale-up network）的效率，
+已成为大规模 AI 训练推理、高性能计算（HPC）和内存池化等场景中的关键互联基础设施。
 
-NVLink 采用点对点（point-to-point）的串行差分信令架构，每条链路由多对高速差分通道（lane pairs）组成，支持全双工双向通信。其物理层和协议栈经过专门优化，能够绕过传统系统总线，直接与 GPU 的内存子系统（包括 L2 缓存和统一内存地址空间）深度集成，从而显著降低主机与设备之间、以及设备与设备之间的数据搬运开销。
+NVLink 采用点对点（point-to-point）的串行差分信令架构，每条链路由多对高速差分通道（lane pairs）组成，支持全双工双向通信。
+其物理层和协议栈经过专门优化，能够绕过传统系统总线，直接与 GPU 的内存子系统（包括 L2 缓存和统一内存地址空间）深度集成，
+从而显著降低主机与设备之间、以及设备与设备之间的数据搬运开销。
 
-NVLink 技术持续迭代演进。以当前主流的 NVLink 4.0（应用于 NVIDIA H100）为例，每 GPU 可配置最多 18 条 NVLink 链路，每链路最高可以提供单向 25 GB/s、双向 50 GB/s 的带宽，因此单 GPU 的 NVLink 总聚合带宽可达 900 GB/s。当与 NVSwitch 交换芯片协同工作时，NVIDIA 构建了全连接（all-to-all）通信拓扑结构。例如在 DGX H100 系统中，8 个 H100 GPU 通过 6 个第二代 NVSwitch 芯片互连，为任意两个 GPU 提供高达单向 225 GB/s、双向 450 GB/s 的通信带宽，有效消除了通信瓶颈。
+NVLink 技术持续迭代演进。以当前主流的 NVLink 4.0（应用于 NVIDIA H100）为例，每 GPU 可配置最多 18 条 NVLink 链路，
+每链路最高可以提供单向 25 GB/s、双向 50 GB/s 的带宽，因此单 GPU 的 NVLink 总聚合带宽可达 900 GB/s。
+当与 NVSwitch 交换芯片协同工作时，NVIDIA 构建了全连接（all-to-all）通信拓扑结构。
+例如在 DGX H100 系统中，8 个 H100 GPU 通过 6 个第二代 NVSwitch 芯片互连，
+为任意两个 GPU 提供高达单向 225 GB/s、双向 450 GB/s 的通信带宽，有效消除了通信瓶颈。
 
-在最新的 NVIDIA Blackwell 架构（如 B200 和 GB200 Superchip）中，NVLink 技术进一步升级为 NVLink 5.0，该版本将每链路的单向带宽提升至 112.5 GB/s，双向达 225 GB/s，单 B200 GPU 配置 18 条链路时，总双向带宽可达 4.05 TB/s。在 GB200 Superchip 中，两个 B200 GPU 通过 18 条 NVLink 5.0 链路直连，内部双向带宽高达 3.6 TB/s，为超大规模模型训练和推理提供了前所未有的片内扩展能力。
+在最新的 NVIDIA Blackwell 架构（如 B200 和 GB200 Superchip）中，NVLink 技术进一步升级为 NVLink 5.0，
+该版本将每链路的单向带宽提升至 112.5 GB/s，双向达 225 GB/s，单 B200 GPU 配置 18 条链路时，
+总双向带宽可达 4.05 TB/s。在 GB200 Superchip 中，两个 B200 GPU 通过 18 条 NVLink 5.0 链路直连，
+内部双向带宽高达 3.6 TB/s，为超大规模模型训练和推理提供了前所未有的片内扩展能力。
 
-此外，NVLink 协议栈支持高级通信语义，包括远程内存访问（Remote Memory Access, RMA）、细粒度一致性协议，以及与集合通信操作（如 all-reduce、all-gather）深度集成的硬件加速机制。结合 NVSwitch 构建的 non-blocking、低延迟交换网络，NVLink 不仅实现了单节点内极致的 scale-up 性能，也为构建跨节点的 AI 超级计算机（如 NVIDIA DGX SuperPOD）奠定了高性能通信基础。
+此外，NVLink 协议栈支持高级通信语义，包括远程内存访问（Remote Memory Access, RMA）、细粒度一致性协议，
+以及与集合通信操作（如 all-reduce、all-gather）深度集成的硬件加速机制。结合 NVSwitch 构建的 non-blocking、低延迟交换网络，
+NVLink 不仅实现了单节点内极致的 scale-up 性能，也为构建跨节点的 AI 超级计算机（如 NVIDIA DGX SuperPOD）奠定了高性能通信基础。
 
 \subsection{GPU Direct RDMA}
 
-GPU Direct RDMA 是 NVIDIA 为提升多节点（multi-node）GPU 系统通信效率而推出的一项关键技术。它允许远程网络适配器（支持 RDMA 的 InfiniBand 或 RoCE 网卡）直接读写 GPU 显存，无需通过主机 CPU 或系统内存中转数据，从而显著降低通信延迟、减少 CPU 负载，并提升整体带宽利用率。GDR 是构建高性能、可扩展的横向扩展（scale-out）AI 与 HPC 系统的核心通信基础设施。
+GPU Direct RDMA 是 NVIDIA 为提升多节点（multi-node）GPU 系统通信效率而推出的一项关键技术。
+它允许远程网络适配器（支持 RDMA 的 InfiniBand 或 RoCE 网卡）直接读写 GPU 显存，无需通过主机 CPU 或系统内存中转数据，
+从而显著降低通信延迟、减少 CPU 负载，并提升整体带宽利用率。
+GDR 是构建高性能、可扩展的横向扩展（scale-out）AI 与 HPC 系统的核心通信基础设施。
 
-在传统通信模式下，跨节点 GPU 之间的数据传输需经历以下路径：源 GPU -> 主机内存（via PCIe DMA）-> 网络协议栈（CPU 参与）-> 目标主机内存 -> 目标 GPU（via PCIe DMA）。这一过程不仅引入多次数据拷贝，还消耗宝贵的 CPU 资源与 PCIe 带宽。而 GDR 通过硬件与驱动协同，使得网络接口卡（NIC）能够直接注册 GPU 显存区域作为 Memory Region，并通过标准 RDMA 操作（如 RDMA Write / RDMA Read）直接访问该区域，实现“零拷贝”（zero-copy）的 GPU-to-GPU 通信。
+在传统通信模式下，跨节点 GPU 之间的数据传输需经历以下路径：
+源 GPU -> 主机内存（via PCIe DMA）-> 网络协议栈（CPU 参与）-> 目标主机内存 -> 目标 GPU（via PCIe DMA）。
+这一过程不仅引入多次数据拷贝，还消耗宝贵的 CPU 资源与 PCIe 带宽。
+而 GDR 通过硬件与驱动协同，使得网络接口卡（NIC）能够直接注册 GPU 显存区域作为 Memory Region，
+并通过标准 RDMA 操作（如 RDMA Write / RDMA Read）直接访问该区域，实现“零拷贝”（zero-copy）的 GPU-to-GPU 通信。
 
 GDR 的实现依赖于多个软硬件组件的紧密协同：
 \begin{itemize}
-    \item \textbf{统一内存地址空间支持}：NVIDIA GPU 的统一虚拟地址（Unified Virtual Addressing, UVA）机制为 GPU 显存分配了全局可寻址的虚拟地址，使得 RDMA 网卡可通过地址映射直接定位显存页。
-    \item \textbf{内核旁路与内存注册}：通过 NVIDIA 的 \texttt{libnvidia-ml}（NVML）及内核驱动（如 \texttt{nvidia-peermem} 模块），GPU 显存可被注册为 RDMA 可访问的内存区域（Memory Region, MR），并暴露给 RDMA verbs 接口。
-    \item \textbf{PCIe 原子性与缓存一致性}：GPU 与 NIC 共享 PCIe 根复合体（Root Complex），并通过 PCIe ATS（Address Translation Services）和 PRS（Page Request Services）等扩展机制协同处理页表缺失与缓存一致性，确保 RDMA 访问的正确性与高效性。
-    \item \textbf{通信库集成}：主流通信框架（如 NCCL）已深度集成 GDR 支持。例如，NCCL 在检测到 GDR 可用时，会自动选择基于 RDMA 的传输路径，绕过主机内存，直接在 GPU 显存间执行集合通信操作。
+    \item \textbf{统一内存地址空间支持}：NVIDIA GPU 的统一虚拟地址（Unified Virtual Addressing, UVA）机制
+          为 GPU 显存分配了全局可寻址的虚拟地址，使得 RDMA 网卡可通过地址映射直接定位显存页。
+    \item \textbf{内核旁路与内存注册}：通过 NVIDIA 的 \texttt{libnvidia-ml}（NVML）及内核驱动（如 \texttt{nvidia-peermem} 模块），
+          GPU 显存可被注册为 RDMA 可访问的内存区域（Memory Region, MR），并暴露给 RDMA verbs 接口。
+    \item \textbf{PCIe 原子性与缓存一致性}：GPU 与 NIC 共享 PCIe 根复合体（Root Complex），
+          并通过 PCIe ATS（Address Translation Services）和 PRS（Page Request Services）等扩展机制
+          协同处理页表缺失与缓存一致性，确保 RDMA 访问的正确性与高效性。
+    \item \textbf{通信库集成}：主流通信框架（如 NCCL）已深度集成 GDR 支持。
+          例如，NCCL 在检测到 GDR 可用时，会自动选择基于 RDMA 的传输路径，绕过主机内存，
+          直接在 GPU 显存间执行集合通信操作。
 \end{itemize}
 
-GDR 的性能优势在大规模分布式训练场景中尤为显著。以基于 InfiniBand 的 DGX SuperPOD 系统为例，结合 NVIDIA Quantum-2 网络与 GDR 技术，跨节点 GPU 间的有效带宽可接近物理链路理论极限（如单端口 400 Gbps InfiniBand 提供约 50 GB/s 双向吞吐），同时将通信延迟控制在亚微秒级。此外，GDR 与 NVLink 在系统架构上形成互补：NVLink 主导单节点内极致带宽（scale-up），而 GDR 则支撑跨节点高效互联（scale-out），二者共同构成“分层通信架构”的核心。
+GDR 的性能优势在大规模分布式训练场景中尤为显著。以基于 InfiniBand 的 DGX SuperPOD 系统为例，结合 NVIDIA Quantum-2 网络与 GDR 技术，
+跨节点 GPU 间的有效带宽可接近物理链路理论极限（如单端口 400 Gbps InfiniBand 提供约 50 GB/s 双向吞吐），同时将通信延迟控制在亚微秒级。
+此外，GDR 与 NVLink 在系统架构上形成互补：NVLink 主导单节点内极致带宽（scale-up），
+而 GDR 则支撑跨节点高效互联（scale-out），二者共同构成“分层通信架构”的核心。
 
-值得注意的是，GDR 的有效使用需满足一系列前提条件，包括使用支持 GDR 的 GPU 驱动（通常要求 R470 或更高版本）、兼容的 RDMA 网卡（如 Mellanox ConnectX-6/7）、启用 IOMMU/ATS 支持的操作系统配置，以及应用程序或通信库对 GDR API 的显式或隐式调用。随着 UCX（Unified Communication X）等统一通信框架的普及，GDR 的部署门槛正逐步降低，已成为现代 AI 集群的标配通信能力。
+值得注意的是，GDR 的有效使用需满足一系列前提条件，
+包括使用支持 GDR 的 GPU 驱动（通常要求 R470 或更高版本）、兼容的 RDMA 网卡（如 Mellanox ConnectX-6/7）、启用 IOMMU/ATS 支持的操作系统配置，
+以及应用程序或通信库对 GDR API 的显式或隐式调用。
+随着 UCX（Unified Communication X）等统一通信框架的普及，GDR 的部署门槛正逐步降低，已成为现代 AI 集群的标配通信能力。
 
-GPU Direct RDMA 通过消除主机内存中转瓶颈，实现了跨节点 GPU 显存的直接、高效、低延迟访问，是构建超大规模分布式 AI 与 HPC 系统不可或缺的关键技术。
+GPU Direct RDMA 通过消除主机内存中转瓶颈，实现了跨节点 GPU 显存的直接、高效、低延迟访问，
+是构建超大规模分布式 AI 与 HPC 系统不可或缺的关键技术。

@@ -2,38 +2,58 @@
 
 \chapter{\sysname 系统架构与设计}
 
-本章将介绍 \sysname 的整体设计理念、系统结构以及核心组件的工作方式。为了应对大模型推理过程中点对点通信效率不足的问题，\sysname 在系统设计上充分利用 GPU 集群的横向 RDMA 网络与纵向 NVLink 高速互联，构建了一个在不占用 GPU 计算核心的前提下，支持高带宽、低时延传输的通信库。
+本章将介绍 \sysname 的整体设计理念、系统结构以及核心组件的工作方式。
+为了应对大模型推理过程中点对点通信效率不足的问题，\sysname 在系统设计上充分利用 GPU 集群的横向 RDMA 网络与纵向 NVLink 高速互联，
+构建了一个在不占用 GPU 计算核心的前提下，支持高带宽、低时延传输的通信库。
 
 \section{系统概述}
 
-\sysname 是面向大模型推理场景设计的高性能通信库，其目标是在推理过程中提供高效、稳定、可扩展的节点间数据传输能力。与传统的 GPU 通信方式相比，\sysname 采用控制面完全卸载（fully control-plane offloading）的方式，将通信调度工作交由 CPU 侧的运行时线程池处理，避免占用 GPU 计算资源，使得推理任务能够最大化地利用 GPU 的算力。\sysname 的设计主要具有以下特点：
+\sysname 是面向大模型推理场景设计的高性能通信库，其目标是在推理过程中提供高效、稳定、可扩展的节点间数据传输能力。
+与传统的 GPU 通信方式相比，\sysname 采用控制面完全卸载（fully control-plane offloading）的方式，
+将通信调度工作交由 CPU 侧的运行时线程池处理，避免占用 GPU 计算资源，使得推理任务能够最大化地利用 GPU 的算力。
+\sysname 的设计主要具有以下特点：
 
 \begin{itemize}
-    \item 异构多链路支持。 \sysname 采用统一的双向通信接口抽象，用户侧仅需通过 \texttt{send()} 与 \texttt{recv()} 两个接口即可完成通信调用。系统内部能够根据硬件环境自动选择使用 GPU Direct RDMA 或 NVLink 作为底层链路，从而在不同网络拓扑下提供统一的编程接口，屏蔽底层差异性简化开发复杂度。
-    \item 良好的可扩展性。 \sysname 采用分层化架构，上层接口稳定，底层链路可插拔。GPU Direct RDMA 和 NVLink 的实现遵循同一调度和接口语义，通过替换链路执行器即可无缝接入更多未来通信方式。
-    \item 安全性与高可靠性。系统基于现代 C++ 与 RAII 原则实现，自动管理资源生命周期，减少手动管理带来的风险。为了在高并发场景下保持性能，系统内部广泛采用无锁队列与细粒度的并发控制机制，确保在高负载下仍能保持正确性与稳定性。
+    \item 异构多链路支持。 \sysname 采用统一的双向通信接口抽象，
+          用户侧仅需通过 \texttt{send()} 与 \texttt{recv()} 两个接口即可完成通信调用。
+          系统内部能够根据硬件环境自动选择使用 GPU Direct RDMA 或 NVLink 作为底层链路，
+          从而在不同网络拓扑下提供统一的编程接口，屏蔽底层差异性简化开发复杂度。
+    \item 良好的可扩展性。 \sysname 采用分层化架构，上层接口稳定，底层链路可插拔。
+          GPU Direct RDMA 和 NVLink 的实现遵循同一调度和接口语义，通过替换链路执行器即可无缝接入更多未来通信方式。
+    \item 安全性与高可靠性。系统基于现代 C++ 与 RAII 原则实现，自动管理资源生命周期，减少手动管理带来的风险。
+          为了在高并发场景下保持性能，系统内部广泛采用无锁队列与细粒度的并发控制机制，确保在高负载下仍能保持正确性与稳定性。
 \end{itemize}
 
-图 \todo{} 展示了 \sysname 的整体系统架构。系统由两部分组成：应用接口层 与 运行时执行层。应用接口层负责接收上层任务，构建通信指令，并将其通过无锁队列传给后台运行时执行层进行处理，实现用户线程与通信线程的解耦。
-运行时执行层由绑定线程池驱动，每个线程通过轮询（poll）机制获取任务并完成通信调度，包括 RDMA 收发指令的组织、WR 列表构建、发送与完成队列处理等。当传输任务完成时，运行时触发事件回调（event notify），唤醒等待中的用户侧线程，从而实现异步高效的通信处理流程。
+图 \todo{} 展示了 \sysname 的整体系统架构。系统由两部分组成：应用接口层 与 运行时执行层。
+应用接口层负责接收上层任务，构建通信指令，并将其通过无锁队列传给后台运行时执行层进行处理，实现用户线程与通信线程的解耦。
+运行时执行层由绑定线程池驱动，每个线程通过轮询（poll）机制获取任务并完成通信调度，
+包括 RDMA 收发指令的组织、WR 列表构建、发送与完成队列处理等。当传输任务完成时，运行时触发事件回调（event notify），
+唤醒等待中的用户侧线程，从而实现异步高效的通信处理流程。
 
 这种设计将通信调度与 GPU 核心计算资源彻底隔离，实现了对模型推理任务最小的额外资源占用，同时保证了通信通路的可扩展性和高性能表现。
 
 \section{分层架构设计}
 
-为了在多样化的 GPU 集群硬件环境中实现可扩展的通信能力，\sysname 采用了严格的分层架构设计。该架构主要由三层组成：应用接口层、运行时调度层与链路执行层。通过分层化抽象，系统实现了接口与硬件细节的解耦，使得不同通信链路（如 RDMA、NVLink）可以在保持接口语义一致的前提下独立演进。
+为了在多样化的 GPU 集群硬件环境中实现可扩展的通信能力，\sysname 采用了严格的分层架构设计。
+该架构主要由三层组成：应用接口层、运行时调度层与链路执行层。
+通过分层化抽象，系统实现了接口与硬件细节的解耦，使得不同通信链路（如 RDMA、NVLink）可以在保持接口语义一致的前提下独立演进。
 
 \subsection{应用接口层}
 
-应用接口层是 \sysname 暴露给用户侧的最上层抽象，其目标是提供统一、轻量且对硬件无感知的通信接口。无论底层使用 RDMA 还是 NVLink，用户始终通过 \texttt{send()} 与 \texttt{recv()} 两个操作完成数据传输请求。该层负责将用户的调用参数封装为通信任务（communication task），并通过无锁队列提交到运行时调度层，从而实现用户线程与通信线程的完全解耦。
+应用接口层是 \sysname 暴露给用户侧的最上层抽象，其目标是提供统一、轻量且对硬件无感知的通信接口。
+无论底层使用 RDMA 还是 NVLink，用户始终通过 \texttt{send()} 与 \texttt{recv()} 两个操作完成数据传输请求。
+该层负责将用户的调用参数封装为通信任务（communication task），并通过无锁队列提交到运行时调度层，从而实现用户线程与通信线程的完全解耦。
 
-同时通过事件机制（Event），应用接口层支持异步通信模型。用户在调用 \texttt{send()} 或 \texttt{recv()} 后，立即获得一个事件对象（Event），该对象可用于查询传输状态或等待传输完成，极大提升了通信的并发性与灵活性。事件对象由 \sysname 系统统一创建与管理，并在底层数据传输完成后由运行时调度层负责触发唤醒，实现了高效的异步通信流程。
+同时通过事件机制（Event），应用接口层支持异步通信模型。用户在调用 \texttt{send()} 或 \texttt{recv()} 后，立即获得一个事件对象（Event），
+该对象可用于查询传输状态或等待传输完成，极大提升了通信的并发性与灵活性。
+事件对象由 \sysname 系统统一创建与管理，并在底层数据传输完成后由运行时调度层负责触发唤醒，实现了高效的异步通信流程。
 
 \subsection{运行时调度层}
 
 \todo{重写}
 
-运行时调度层是 \sysname 的核心控制面逻辑所在。该层采用 CPU 线程池负责执行通信调度和轮询，由 CPU 线程驱动通信任务的执行不占用 GPU 流式多处理器，实现完全控制面卸载。其主要功能包括：
+运行时调度层是 \sysname 的核心控制面逻辑所在。该层采用 CPU 线程池负责执行通信调度和轮询，
+由 CPU 线程驱动通信任务的执行不占用 GPU 流式多处理器，实现完全控制面卸载。其主要功能包括：
 
 \begin{enumerate}
     \item 接收来自应用接口层的任务，并将其入队至内部待发送任务队列；
@@ -47,7 +67,8 @@
 
 \subsection{链路执行层}
 
-链路执行层封装了各类通信链路的实现逻辑，其行为由运行时调度层驱动，不对用户可见。RDMA、NVLink 等不同执行器具有各自的队列结构与传输语义，但统一遵循应用接口抽象与调度层规范。
+链路执行层封装了各类通信链路的实现逻辑，其行为由运行时调度层驱动，不对用户可见。
+RDMA、NVLink 等不同执行器具有各自的队列结构与传输语义，但统一遵循应用接口抽象与调度层规范。
 
 这一层的可插拔设计保证了 \sysname 可以随着未来 GPU 拓扑与互联技术的发展而平滑扩展，而无需对上层接口和调度逻辑作任何修改。
 
@@ -55,7 +76,8 @@
 
 应用接口层是 \sysname 面向用户的入口，其设计目标是：保持接口简洁、强语义一致性、对底层链路透明，同时具备异步化和可扩展能力。
 
-\sysname 将通信操作统一抽象为 \texttt{send()} 与 \texttt{recv()} 两类基本指令。每一次指令调用均会生成一个独立的通信任务，系统负责保证以下语义：
+\sysname 将通信操作统一抽象为 \texttt{send()} 与 \texttt{recv()} 两类基本指令。
+每一次指令调用均会生成一个独立的通信任务，系统负责保证以下语义：
 
 \begin{itemize}
     \item 双向通信的接口形式保持一致；
@@ -64,16 +86,21 @@
     \item 传输完成的通知由事件机制统一管理。
 \end{itemize}
 
-在用户调用 \texttt{send()} 与 \texttt{recv()} 向系统提交通信任务时，每个通信任务均携带一个唯一标识符 \texttt{unique\_id}，其在 \sysname 中承担两类功能：
+在用户调用 \texttt{send()} 与 \texttt{recv()} 向系统提交通信任务时，
+每个通信任务均携带一个唯一标识符 \texttt{unique\_id}，其在 \sysname 中承担两类功能：
 
 \begin{enumerate}
-    \item \textbf{作为逻辑通道唯一标识}：\texttt{unique\_id} 用于标识发送端与接收端之间的逻辑通信通道，确保数据能够正确路由到对应的接收者，以支持同一时刻进行多路并发通信，达到物理链路的多路复用，提升整体资源利用率。
-    \item \textbf{优先级控制}：运行时调度层以 \texttt{unique\_id} 为最基本的公平性与优先级调度单元，通过维护不同优先级的任务队列，实现基于优先级的动态带宽分配。高优先级的 \texttt{unique\_id} 可获得更多调度机会，从而降低其传输延迟，满足延迟敏感型通信需求。
+    \item \textbf{作为逻辑通道唯一标识}：\texttt{unique\_id} 用于标识发送端与接收端之间的逻辑通信通道，
+    确保数据能够正确路由到对应的接收者，以支持同一时刻进行多路并发通信，达到物理链路的多路复用，提升整体资源利用率。
+    \item \textbf{优先级控制}：运行时调度层以 \texttt{unique\_id} 为最基本的公平性与优先级调度单元，
+    通过维护不同优先级的任务队列，实现基于优先级的动态带宽分配。
+    高优先级的 \texttt{unique\_id} 可获得更多调度机会，从而降低其传输延迟，满足延迟敏感型通信需求。
 \end{enumerate}
 
 通过增加带有优先级语义的唯一标识符，系统可以为多级优先级调度提供了接口层基础，并且可扩展至更多调度策略，提高可扩展性。
 
-\sysname 采用显式事件（Event）对象实现通信异步化。每次 \texttt{send()} 或 \texttt{recv()} 返回一个 \texttt{Event}，其语义如下：
+\sysname 采用显式事件（Event）对象实现通信异步化。
+每次 \texttt{send()} 或 \texttt{recv()} 返回一个 \texttt{Event}，其语义如下：
 
 \begin{itemize}
     \item Event 初始状态为未完成；
@@ -83,7 +110,8 @@
 
 这一机制避免了传统接口依赖 Cuda Event 和 Stream 的限制，使得通信流程完全独立于 GPU 计算流水线。
 
-为确保低延迟与高并发，应用接口层采用多生产者、多消费者的并发队列（Multi-Producer Multi-Consumer Concurrent Queue）将任务提交给运行时调度层。任务封装内容包括：
+为确保低延迟与高并发，应用接口层采用多生产者、多消费者的并发队列（Multi-Producer Multi-Consumer Concurrent Queue）将任务提交给运行时调度层。
+任务封装内容包括：
 
 \begin{itemize}
     \item 通信元数据：地址、长度、访问控制的密钥信息等；
@@ -95,30 +123,62 @@
 
 \section{RDMA 链路执行器设计}
 
-RDMA（Remote Direct Memory Access）链路执行器是 \sysname 的核心数据面组件之一，其负责在 GPU Direct RDMA 网络上完成端到端的数据传输。该执行器遵循统一的链路抽象规范，被运行时调度层（Runtime Scheduler）驱动，实现无需 GPU SM 参与的高性能数据搬运。
+RDMA（Remote Direct Memory Access）链路执行器是 \sysname 的核心数据面组件之一，
+其负责在 GPU Direct RDMA 网络上完成端到端的数据传输。
+该执行器遵循统一的链路抽象规范，被运行时调度层（Runtime Scheduler）驱动，实现无需 GPU SM 参与的高性能数据搬运。
 
-本节将详细介绍 RDMA 执行器的内部机制，包括内存注册、控制面与数据面的协同方式、基于 Ticket 的接收方发起机制，并详细解释 \sysname 为了保证多 GPU 环境下通信的系统性能和正确性做出的针对性优化。
+本节将详细介绍 RDMA 执行器的内部机制，包括内存注册、控制面与数据面的协同方式、基于 Ticket 的接收方发起机制，
+并详细解释 \sysname 为了保证多 GPU 环境下通信的系统性能和正确性做出的针对性优化。
 
 \subsection{GPU 内存注册与 MemoryRegion 管理}
 
-RDMA 网卡 RNIC 只能通过直接内存访问（Direct Memory Access）访问到已经注册的内存区域，因此 RDMA 链路执行器需要在执行任何传输之前，将数据缓冲区注册为 MemoryRegion。MemoryRegion 可以是主机内存，也可以是 GPU 显存。针对 GPU 显存注册的 MemoryRegion 可以通过 nvidia\_peermem 内核模块在进行 DMA 访问时进行地址翻译。在注册 MemoryRegion 时，通过调用 libibverbs 的接口进行注册，注册得到的 MemoryRegion 可以获取用于本地访问权限控制的密钥 lkey 和用于远端访问权限控制的密钥 rkey，保证数据传输的安全性。
+RDMA 网卡 RNIC 只能通过直接内存访问（Direct Memory Access）访问到已经注册的内存区域，
+因此 RDMA 链路执行器需要在执行任何传输之前，将数据缓冲区注册为 MemoryRegion。MemoryRegion 可以是主机内存，也可以是 GPU 显存。
+针对 GPU 显存注册的 MemoryRegion 可以通过 nvidia\_peermem 内核模块在进行 DMA 访问时进行地址翻译。
+在注册 MemoryRegion 时，通过调用 libibverbs 的接口进行注册，
+注册得到的 MemoryRegion 可以获取用于本地访问权限控制的密钥 lkey 和用于远端访问权限控制的密钥 rkey，保证数据传输的安全性。
 
-RDMA 网卡（RNIC）在执行远程读写操作时，并不能像 CPU 那样通过多级页表和缺页异常机制对任意虚拟地址进行透明访问。网卡自身维护着一套设备内存翻译表（Memory Translation Table, MTT），其中保存了系统页表的一部分内容。只有在某段内存注册给网卡并且建立了内存翻译表项后，RNIC 才能对其执行 DMA 操作。因此在 RDMA 通信开始之前，任何需要参与 DMA 的主机内存或 GPU 显存都必须通过 \texttt{ibv\_reg\_mr} 注册为 MemoryRegion 才能进行地址翻译。
+RDMA 网卡（RNIC）在执行远程读写操作时，并不能像 CPU 那样通过多级页表和缺页异常机制对任意虚拟地址进行透明访问。
+网卡自身维护着一套设备内存翻译表（Memory Translation Table, MTT），其中保存了系统页表的一部分内容。
+只有在某段内存注册给网卡并且建立了内存翻译表项后，RNIC 才能对其执行 DMA 操作。
+因此在 RDMA 通信开始之前，任何需要参与 DMA 的主机内存或 GPU 显存都必须通过 \texttt{ibv\_reg\_mr} 注册为 MemoryRegion 才能进行地址翻译。
 
-当对一段主机内存调用 \texttt{ibv\_reg\_mr} 时，libibverbs 会将注册请求交由内核驱动处理。驱动首先会将该虚拟地址区间对应的物理页固定（pin）在内存中，使其不会被操作系统换出（swap-out）；随后，驱动会为这些被锁定的物理页建立设备虚拟地址到物理地址的映射，并将映射信息写入 RNIC 内部的地址翻译表，使网卡能够在传输过程中独立完成地址翻译。注册完成后，\texttt{ibv\_reg\_mr} 会返回一个 MemoryRegion，其中包含本地访问所需的 lkey 以及远端节点访问时需要的 rkey，这两个密钥由 RNIC 在硬件中进行权限验证，从而保证了访问的安全性。
+当对一段主机内存调用 \texttt{ibv\_reg\_mr} 时，libibverbs 会将注册请求交由内核驱动处理。
+驱动首先会将该虚拟地址区间对应的物理页固定（pin）在内存中，使其不会被操作系统换出（swap-out）；
+随后，驱动会为这些被锁定的物理页建立设备虚拟地址到物理地址的映射，并将映射信息写入 RNIC 内部的地址翻译表，
+使网卡能够在传输过程中独立完成地址翻译。注册完成后，\texttt{ibv\_reg\_mr} 会返回一个 MemoryRegion，
+其中包含本地访问所需的 lkey 以及远端节点访问时需要的 rkey，这两个密钥由 RNIC 在硬件中进行权限验证，从而保证了访问的安全性。
 
-然而，GPU 显存在物理组织和寻址方式上均不同于普通主机内存。CUDA 申请的显存地址属于 GPU 设备内部的虚拟地址空间，不存在于 CPU 的线性地址空间中；GPU 页表也由 GPU 驱动维护，操作系统无法直接通过 \texttt{get\_user\_pages()} 固定这些页。因此，为使 RDMA 网卡能够像访问主机内存一样直接 DMA 访问 GPU 显存，系统需要一个能在 RNIC 与 GPU 驱动之间桥接地址翻译与页固定逻辑的内核组件。NVIDIA 提供的 \texttt{nvidia\_peermem} 内核模块基于 Mellanox 的 PeerDirect（即 \texttt{ib\_peer\_memory}）框架，将 GPU 显存暴露为一种“外部设备内存”（peer memory）。该模块向 RDMA 协议栈注册为 peer memory client，并提供包括 \texttt{acquire()}、\texttt{get\_pages()}、\texttt{dma\_map()} 与 \texttt{put\_pages()} 在内的一系列回调接口。当应用通过 \texttt{ibv\_reg\_mr} 传入一个由 \texttt{cudaMalloc} 获得的 GPU device pointer 时，RDMA 内核栈会调用各 peer memory client 的匹配函数，最终由 \texttt{nvidia\_peermem} 接管该地址区间的注册流程。
-在接管注册之后，\texttt{nvidia\_peermem} 会通过调用 GPU 驱动的 P2P（peer-to-peer）接口来完成 GPU 页的固定与地址翻译过程。具体而言，GPU 驱动负责将对应显存页 pin 住，并返回这些页在 PCIe 体系结构下可被其他设备访问的总线地址描述（通常以 \texttt{sg\_table} 或等价的散列表结构表示）。随后，\texttt{nvidia\_peermem} 将这些页信息回传给 RDMA 子系统，由 HCA 驱动执行对应的 DMA 映射（\texttt{dma\_map\_sg()}），从而获得可直接被网卡访问的 DMA 地址。RNIC 最终使用该地址列表构建自身的 MTT 项，完成 GPU 显存的 MemoryRegion 注册，并向应用返回可用于本地与远端访问权限控制的 \texttt{lkey} 与 \texttt{rkey}。
+然而，GPU 显存在物理组织和寻址方式上均不同于普通主机内存。
+CUDA 申请的显存地址属于 GPU 设备内部的虚拟地址空间，不存在于 CPU 的线性地址空间中；
+GPU 页表也由 GPU 驱动维护，操作系统无法直接通过 \texttt{get\_user\_pages()} 固定这些页。
+因此，为使 RDMA 网卡能够像访问主机内存一样直接 DMA 访问 GPU 显存，系统需要一个能在 RNIC 与 GPU 驱动之间桥接地址翻译与页固定逻辑的内核组件。
+NVIDIA 提供的 \texttt{nvidia\_peermem} 内核模块基于 Mellanox 的 PeerDirect（即 \texttt{ib\_peer\_memory}）框架，将 GPU 显存暴露为一种“外部设备内存”（peer memory）。
+该模块向 RDMA 协议栈注册为 peer memory client，并提供包括 \texttt{acquire()}、\texttt{get\_pages()}、\texttt{dma\_map()} 与 \texttt{put\_pages()} 在内的一系列回调接口。
+当应用通过 \texttt{ibv\_reg\_mr} 传入一个由 \texttt{cudaMalloc} 获得的 GPU device pointer 时，
+RDMA 内核栈会调用各 peer memory client 的匹配函数，最终由 \texttt{nvidia\_peermem} 接管该地址区间的注册流程。
+在接管注册之后，\texttt{nvidia\_peermem} 会通过调用 GPU 驱动的 P2P（peer-to-peer）接口来完成 GPU 页的固定与地址翻译过程。
+具体而言，GPU 驱动负责将对应显存页 pin 住，并返回这些页在 PCIe 体系结构下可被其他设备访问的总线地址描述（通常以 \texttt{sg\_table} 或等价的散列表结构表示）。
+随后，\texttt{nvidia\_peermem} 将这些页信息回传给 RDMA 子系统，由 HCA 驱动执行对应的 DMA 映射（\texttt{dma\_map\_sg()}），从而获得可直接被网卡访问的 DMA 地址。
+RNIC 最终使用该地址列表构建自身的 MTT 项，完成 GPU 显存的 MemoryRegion 注册，并向应用返回可用于本地与远端访问权限控制的 \texttt{lkey} 与 \texttt{rkey}。
 
-通过上述机制，\sysname 才能够在 RDMA 数据面上直接操作已经注册的 GPU 内存区域，使 RDMA 链路就在不经过主机内存中转的情况下完成节点间的数据传输，为 \sysname 在异构多链路环境下实现高性能 GPU 通信奠定了基础。
+通过上述机制，\sysname 才能够在 RDMA 数据面上直接操作已经注册的 GPU 内存区域，
+使 RDMA 链路就在不经过主机内存中转的情况下完成节点间的数据传输，为 \sysname 在异构多链路环境下实现高性能 GPU 通信奠定了基础。
 
-在 \sysname 中，MemoryRegion 工具模块 rdma\_util 在初始化时完成内存注册，并由 Runtime 在每次 send/recv 提交任务时携带 \texttt{addr, length, lkey / rkey} 信息。这些资源在 \sysname 中完全以 RAII 方式管理，避免显式 deregister 带来的复杂性和错误风险。
+在 \sysname 中，MemoryRegion 工具模块 rdma\_util 在初始化时完成内存注册，
+并由 Runtime 在每次 send/recv 提交任务时携带 \texttt{addr, length, lkey / rkey} 信息。
+这些资源在 \sysname 中完全以 RAII 方式管理，避免显式 deregister 带来的复杂性和错误风险。
 
-在注册完成之后，\sysname 利用 GPU Direct RDMA 技术直接完成 GPU-to-GPU 的数据搬移。与传统的 ``$\text{GPU} \rightarrow \text{Host} \rightarrow \text{NIC} \rightarrow \text{Host} \rightarrow \text{GPU}$'' 路径不同，GPU Direct RDMA 将路径缩短为 ``$\text{GPU}_{\text{src}} \longrightarrow \text{NIC}_{\text{src}} \longrightarrow \text{NIC}_{\text{dst}} \longrightarrow \text{GPU}_{\text{dst}}$''，无需主机内存参与数据面搬运，从而提升带宽并降低延迟。
+在注册完成之后，\sysname 利用 GPU Direct RDMA 技术直接完成 GPU-to-GPU 的数据搬移。
+与传统的 ``$\text{GPU} \rightarrow \text{Host} \rightarrow \text{NIC} \rightarrow \text{Host} \rightarrow \text{GPU}$'' 路径不同，
+GPU Direct RDMA 将路径缩短为 ``$\text{GPU}_{\text{src}} \longrightarrow \text{NIC}_{\text{src}} \longrightarrow \text{NIC}_{\text{dst}} \longrightarrow \text{GPU}_{\text{dst}}$''，
+无需主机内存参与数据面搬运，从而提升带宽并降低延迟。
 
 \subsection{Receiver 驱动的双边通信设计}
 
-在 \sysname 中，数据面的传输采用“Receiver 发起（Receiver-Initiated）”模式。其核心是接收方在准备好缓冲区之后，主动告知发送方自己缓冲区的元数据，允许发送方在接收方无感的情况下进行数据写入。接收方告知发送方的信息通过一个轻量级的控制面结构 \textbf{Ticket} 进行传递，其中包括的信息如下：
+在 \sysname 中，数据面的传输采用“Receiver 发起（Receiver-Initiated）”模式。
+其核心是接收方在准备好缓冲区之后，主动告知发送方自己缓冲区的元数据，允许发送方在接收方无感的情况下进行数据写入。
+接收方告知发送方的信息通过一个轻量级的控制面结构 \textbf{Ticket} 进行传递，其中包括的信息如下：
 
 \begin{itemize}
     \item \texttt{addr}: 接收方（Receiver）内存的起始地址，用于 RDMA write
@@ -127,32 +187,56 @@ RDMA 网卡（RNIC）在执行远程读写操作时，并不能像 CPU 那样通
     \item \texttt{unique\_id}: 用于通道标识与优先级调度
 \end{itemize}
 
-在实现上，Receiver 将 Ticket 写入本地提前注册为 MemoryRegion 的 host buffer，然后使用 \texttt{post\_send()} 发送一条双边语义的 RDMA send 将其发送给对端。Sender 端调用 \texttt{post\_recv()} 提前准备足够数量和大小的 Recv WR，从而能够接收 Ticket。这一阶段基于 RDMA 数据面，不涉及操作系统内核的参与，相比于使用带外通信（TCP），保证了高效的控制面通信。发送方获得 \textbf{Ticket} 后，可以进行请求匹配并准备发送队列，根据优先级和通道标识符进行调度，最终构建 RDMA write 请求，在接收方 CPU 无感知的情况下将数据直接写入接收方。
+在实现上，Receiver 将 Ticket 写入本地提前注册为 MemoryRegion 的 host buffer，
+然后使用 \texttt{post\_send()} 发送一条双边语义的 RDMA send 将其发送给对端。
+Sender 端调用 \texttt{post\_recv()} 提前准备足够数量和大小的 Recv WR，从而能够接收 Ticket。
+这一阶段基于 RDMA 数据面，不涉及操作系统内核的参与，相比于使用带外通信（TCP），保证了高效的控制面通信。
+发送方获得 \textbf{Ticket} 后，可以进行请求匹配并准备发送队列，根据优先级和通道标识符进行调度，
+最终构建 RDMA write 请求，在接收方 CPU 无感知的情况下将数据直接写入接收方。
 
 \subsection{Sender 端的匹配与发送队列维护}
 
 具体地，Sender 在每一次调用 \texttt{poll()} 时，都会执行以下步骤：
 
-首先通过 \texttt{post\_recv()} 接收来自 Receiver 的 Ticket，然后通过并发队列接收来自应用接口层的本地待发送任务的 Ticket；其次按照本地和远端接收到的 Ticket 中的 unique\_id 将两类请求匹配；最后构建 RDMA write 请求，通过 \texttt{post\_send()} 提交发送。
+首先通过 \texttt{post\_recv()} 接收来自 Receiver 的 Ticket，然后通过并发队列接收来自应用接口层的本地待发送任务的 Ticket；
+其次按照本地和远端接收到的 Ticket 中的 unique\_id 将两类请求匹配；最后构建 RDMA write 请求，通过 \texttt{post\_send()} 提交发送。
 
-其中 Sender 内部维护的并不是单一队列，而是基于 \texttt{unique\_id} 组织的多路独立流控制结构。具体而言，Sender 通过两个 \texttt{MultiMap} 对未匹配的请求进行管理：
+其中 Sender 内部维护的并不是单一队列，而是基于 \texttt{unique\_id} 组织的多路独立流控制结构。
+具体而言，Sender 通过两个 \texttt{MultiMap} 对未匹配的请求进行管理：
 
 \begin{itemize}
-    \item \texttt{pending\_remote\_recv\_request\_map}: 以 \texttt{unique\_id} 为键，按逻辑通道存放来自 Receiver 的 Ticket，这些 Ticket 可能包含需要多次分片的剩余区间，因此队列中的元素会在分片过程中被原地更新。
-    \item \texttt{pending\_local\_send\_request\_map}: 同样以 \texttt{unique\_id} 为键，按逻辑通道存放本地待发送请求，未被匹配的请求将暂存在该结构中。
+    \item \texttt{pending\_remote\_recv\_request\_map}: 以 \texttt{unique\_id} 为键，
+    按逻辑通道存放来自 Receiver 的 Ticket，这些 Ticket 可能包含需要多次分片的剩余区间，
+    因此队列中的元素会在分片过程中被原地更新。
+    \item \texttt{pending\_local\_send\_request\_map}: 同样以 \texttt{unique\_id} 为键，
+    按逻辑通道存放本地待发送请求，未被匹配的请求将暂存在该结构中。
 \end{itemize}
 
-上述两个映射结构共同构成了 Sender 的“待匹配请求池”。在每个 \texttt{unique\_id} 上，只有当远端请求与本地请求同时存在时，Sender 才能够为该流构造有效的 RDMA Write 操作；否则，相关 Ticket 将继续保留在队列中，等待下一次 \texttt{poll()} 调用完成匹配条件。
+上述两个映射结构共同构成了 Sender 的“待匹配请求池”。
+在每个 \texttt{unique\_id} 上，只有当远端请求与本地请求同时存在时，Sender 才能够为该流构造有效的 RDMA Write 操作；
+否则，相关 Ticket 将继续保留在队列中，等待下一次 \texttt{poll()} 调用完成匹配条件。
 
-一旦两类请求成功匹配，Sender 便根据当前剩余传输大小决定是否需要拆分为多个分片（chunks）。对于每个分片，Sender 构造一个对应的 Work Request 提交给 NIC。最终，在 NIC 返回带有 \texttt{finished} 标志的完成事件（Completion Queue Entry, CQE）后，Sender 才会触发上层事件，表示整个发送过程真正结束。
+一旦两类请求成功匹配，Sender 便根据当前剩余传输大小决定是否需要拆分为多个分片（chunks）。
+对于每个分片，Sender 构造一个对应的 Work Request 提交给 NIC。
+最终，在 NIC 返回带有 \texttt{finished} 标志的完成事件（Completion Queue Entry, CQE）后，
+Sender 才会触发上层事件，表示整个发送过程真正结束。
 
-这种多队列设计通过增加本地缓存，避免了因为并发请求过多或发送方、接收方不同步导致的请求丢失问题，并使得 Sender 能够在面对异步化、高并发的请求流量时保持稳定。进一步地，由于每个请求在完全匹配之前都会被保存在待匹配队列中，Sender 可以灵活地处理大消息拆分，在多优先级任务调度下通过细粒度分片实现近似抢占式的传输控制，避免了队头阻塞和优先级反转问题，从而提升整体通信效率。
+这种多队列设计通过增加本地缓存，避免了因为并发请求过多或发送方、接收方不同步导致的请求丢失问题，
+并使得 Sender 能够在面对异步化、高并发的请求流量时保持稳定。进一步地，由于每个请求在完全匹配之前都会被保存在待匹配队列中，
+Sender 可以灵活地处理大消息拆分，在多优先级任务调度下通过细粒度分片实现近似抢占式的传输控制，
+避免了队头阻塞和优先级反转问题，从而提升整体通信效率。
 
 \subsection{带有通知机制的 RDMA Write 设计}
 
-在基于 RDMA 的单边写操作的设计中，普通的 \texttt{IBV\_WR\_RDMA\_WRITE} 仅在发送方本地完成队列产生完成事件，而接收方在数据被写入缓冲区之后并不会自动获得通知。如果完全依赖 CPU 轮询 GPU 显存或发送额外的控制消息来感知写入完成，一方面会引入额外的 PCIe 开销，另一方面也会增加控制面的 RTT。为此，\sysname 在 RDMA 链路执行器中采用了带立即数的写操作 \texttt{IBV\_WR\_RDMA\_WRITE\_WITH\_IMM}，在不增加额外控制报文的前提下，将数据写入与通知语义合并在同一个 RDMA 操作中完成。
+在基于 RDMA 的单边写操作的设计中，普通的 \texttt{IBV\_WR\_RDMA\_WRITE} 仅在发送方本地完成队列产生完成事件，
+而接收方在数据被写入缓冲区之后并不会自动获得通知。如果完全依赖 CPU 轮询 GPU 显存或发送额外的控制消息来感知写入完成，
+一方面会引入额外的 PCIe 开销，另一方面也会增加控制面的 RTT。
+为此，\sysname 在 RDMA 链路执行器中采用了带立即数的写操作 \texttt{IBV\_WR\_RDMA\_WRITE\_WITH\_IMM}，
+在不增加额外控制报文的前提下，将数据写入与通知语义合并在同一个 RDMA 操作中完成。
 
-具体地，对于被分片传输的大消息，Sender 端会将中间分片使用普通的 RDMA Write 请求提交，不会在接收方的 Recv CQ 产生时间；只在最后一个分片使用带有立即数的 RDMA Write 请求（操作码为 \texttt{RDMA\_WRITE\_WITH\_IMM}）。所有分片共享同一个逻辑请求上下文，通过 Sender 侧维护的 \texttt{wrid\_t} 结构进行状态编码，其中：
+具体地，对于被分片传输的大消息，Sender 端会将中间分片使用普通的 RDMA Write 请求提交，不会在接收方的 Recv CQ 产生时间；
+只在最后一个分片使用带有立即数的 RDMA Write 请求（操作码为 \texttt{RDMA\_WRITE\_WITH\_IMM}）。
+所有分片共享同一个逻辑请求上下文，通过 Sender 侧维护的 \texttt{wrid\_t} 结构进行状态编码，其中：
 
 \begin{itemize}
     \item \texttt{unique\_id} 标识所属的逻辑通道;
@@ -160,29 +244,60 @@ RDMA 网卡（RNIC）在执行远程读写操作时，并不能像 CPU 那样通
     \item \texttt{finished} 标记当前完成事件是否对应某个逻辑请求的最后一个分片。
 \end{itemize}
 
-当 Sender 侧从发送完成队列（Send CQ）中轮询到完成事件后，首先解析 \texttt{wr\_id} 转换成\texttt{wrid\_t} 结构还原上述字段，从而一次性回收 doorbell 批中对应的本地状态；若该完成事件对应的 \texttt{finished} 为真，则说明该 \texttt{unique\_id} 上的整个发送请求已经全部写入完成，此时 Sender 从本地缓存中取出对应逻辑通道的 \texttt{Event} 并调用 \texttt{notify()}，向应用接口层交付“发送完成”的通知。
+当 Sender 侧从发送完成队列（Send CQ）中轮询到完成事件后，
+首先解析 \texttt{wr\_id} 转换成\texttt{wrid\_t} 结构还原上述字段，从而一次性回收 doorbell 批中对应的本地状态；
+若该完成事件对应的 \texttt{finished} 为真，则说明该 \texttt{unique\_id} 上的整个发送请求已经全部写入完成，
+此时 Sender 从本地缓存中取出对应逻辑通道的 \texttt{Event} 并调用 \texttt{notify()}，向应用接口层交付“发送完成”的通知。
 
-在接收方，\sysname 为每个 Ticket 提前在 Recv CQ 上预投递零长度的接收工作请求，可以用于匹配带有立即数（Immediate）的 RDMA Write 请求。当 Sender 使用带有立即数的 RDMA Write 完成最后一个分片写入时，RNIC 在执行写入的同时，会在接收者的 Recv CQ 上生成一条带有 \texttt{IBV\_WC\_RECV\_RDMA\_WITH\_IMM} 操作码的完成事件。该事件包含一段 32 位的立即数，\sysname 将其编码为 \texttt{unique\_id}，Receiver 在取出该事件后，即可直接索引到对应的逻辑通道，并进一步通知应用接口层传输完成的语义。
+在接收方，\sysname 为每个 Ticket 提前在 Recv CQ 上预投递零长度的接收工作请求，可以用于匹配带有立即数（Immediate）的 RDMA Write 请求。
+当 Sender 使用带有立即数的 RDMA Write 完成最后一个分片写入时，RNIC 在执行写入的同时，
+会在接收者的 Recv CQ 上生成一条带有 \texttt{IBV\_WC\_RECV\_RDMA\_WITH\_IMM} 操作码的完成事件。
+该事件包含一段 32 位的立即数，\sysname 将其编码为 \texttt{unique\_id}，Receiver 在取出该事件后，
+即可直接索引到对应的逻辑通道，并进一步通知应用接口层传输完成的语义。
 
 \subsection{GPU 内存一致性问题}
 
-在 GPU Direct RDMA 场景下，RDMA 网卡（RNIC）在完成对 GPU 显存（device memory）的 DMA 写入后，其写入顺序和可见性并不能仅由 RDMA Completion 事件来保证。根本原因在于 PCIe 协议允许对不同目标地址的写操作发生乱序（out-of-order），从而导致这样一种情况：接收端虽然已经在 RNIC 的完成队列中观察到 \texttt{IBV\_WC\_RECV\_RDMA\_WITH\_IMM} 的完成事件，但 GPU 上对应的数据可能尚未在内存体系结构中变为可见。因此，RDMA completion 所提供的仅是写入已由 RNIC 执行完毕的语义，而不是 GPU 能够读取到最新写入数据的可见性语义。
+在 GPU Direct RDMA 场景下，RDMA 网卡（RNIC）在完成对 GPU 显存（device memory）的 DMA 写入后，
+其写入顺序和可见性并不能仅由 RDMA Completion 事件来保证。
+根本原因在于 PCIe 协议允许对不同目标地址的写操作发生乱序（out-of-order），从而导致这样一种情况：
+接收端虽然已经在 RNIC 的完成队列中观察到 \texttt{IBV\_WC\_RECV\_RDMA\_WITH\_IMM} 的完成事件，
+但 GPU 上对应的数据可能尚未在内存体系结构中变为可见。
+因此，RDMA completion 所提供的仅是写入已由 RNIC 执行完毕的语义，而不是 GPU 能够读取到最新写入数据的可见性语义。
 
-为确保 GPU 能以强一致性观察到由 RNIC 写入的数据，\sysname 在接收路径中引入了独立的 \texttt{Flusher} 组件。当系统处于 GPU Direct RDMA 模式时，接收方在捕获到 \texttt{IBV\_WC\_RECV\_RDMA\_WITH\_IMM} 的完成事件之后不会立即向上层触发事件通知，而是将该事件交由 \texttt{Flusher} 处理。具体而言，\texttt{Flusher} 会对刚被写入的 GPU 地址执行一次本地回环（loopback） 的 RDMA read 操作。由于 PCIe 协议保证：对于同一事务域中来自同一发起方的 PCIe 写，在该写之后发起的读操作必须能够观测到之前所有写入结果，因此这次 loopback read 可以作为一道内存栅栏（memory fence），确保此前 RNIC 对 GPU 显存进行的所有 DMA 写都已在 GPU 内存层次结构中完成并对后续访问可见。
+为确保 GPU 能以强一致性观察到由 RNIC 写入的数据，\sysname 在接收路径中引入了独立的 \texttt{Flusher} 组件。
+当系统处于 GPU Direct RDMA 模式时，接收方在捕获到 \texttt{IBV\_WC\_RECV\_RDMA\_WITH\_IMM} 的完成事件之后不会立即向上层触发事件通知，
+而是将该事件交由 \texttt{Flusher} 处理。
+具体而言，\texttt{Flusher} 会对刚被写入的 GPU 地址执行一次本地回环（loopback） 的 RDMA read 操作。
+由于 PCIe 协议保证：对于同一事务域中来自同一发起方的 PCIe 写，在该写之后发起的读操作必须能够观测到之前所有写入结果，
+因此这次 loopback read 可以作为一道内存栅栏（memory fence），确保此前 RNIC 对 GPU 显存进行的所有 DMA 写都已在 GPU 内存层次结构中完成并对后续访问可见。
 
-通过这种机制，\sysname 获得了强于原生 RDMA completion 的可见性与排序语义。上层应用在收到来自 \texttt{Flusher} 的事件通知时，可以严格保证 GPU 侧数据已完成写入并可见的语义，从而避免由于 PCIe 写入乱序带来的数据不一致问题。
+通过这种机制，\sysname 获得了强于原生 RDMA completion 的可见性与排序语义。
+上层应用在收到来自 \texttt{Flusher} 的事件通知时，可以严格保证 GPU 侧数据已完成写入并可见的语义，从而避免由于 PCIe 写入乱序带来的数据不一致问题。
 
 \subsection{RDMA 性能优化}
 
-为了让 \sysname 在大规模 GPU-to-GPU 数据传输和高并发场景下，真正发挥出 RDMA 网络高带宽与低时延的能力，RDMA 执行器在实现层做了多项优化，以尽可能减少 CPU \& RNIC 交互、降低 PCIe 总线与 NIC 负担。
+为了让 \sysname 在大规模 GPU-to-GPU 数据传输和高并发场景下，真正发挥出 RDMA 网络高带宽与低时延的能力，
+RDMA 执行器在实现层做了多项优化，以尽可能减少 CPU \& RNIC 交互、降低 PCIe 总线与 NIC 负担。
 
-首先，\sysname 利用 WR list + doorbell batching 方式，将多个独立的工作请求（WR）组织成一个链表，然后一次性通过 \texttt{ibv\_post\_send()} 提交给 RNIC。这样，多个 WR 对应的通知 (doorbell) 只需一次 MMIO 写 (doorbell ring)，而不是为每个 WR 都做一次。对比传统逐 WR 提交方式，这样能显著减少 CPU 发起 MMIO 的次数，从而降低 CPU-NIC 的交互开销。
+首先，\sysname 利用 WR list + doorbell batching 方式，将多个独立的工作请求（WR）组织成一个链表，
+然后一次性通过 \texttt{ibv\_post\_send()} 提交给 RNIC。这样，多个 WR 对应的通知 (doorbell) 只需一次 MMIO 写 (doorbell ring)，
+而不是为每个 WR 都做一次。对比传统逐 WR 提交方式，这样能显著减少 CPU 发起 MMIO 的次数，从而降低 CPU-NIC 的交互开销。
 
-其次，\sysname 也进行了对 Work Completion 的优化，进行选择性的设置 Signal WR，并与批量 WR 提交结合，使得中间的分片 (chunk) WR 不产生 CQE（Completion Queue Entry），从而避免 RNIC 对每个 WR 都通过 PCIe DMA 写回主机，大幅减轻 NIC 和 PCIe 总线写回负担。仅在 WR 链表满或是逻辑消息的最后一个 WR 设置为触发 Signal，以保证发送方能够及时获知传输完成状态，并进行批量的 WR 链表缓冲区复用。这样不仅保证了语义正确，也最大限度地降低了开销。
+其次，\sysname 也进行了对 Work Completion 的优化，进行选择性的设置 Signal WR，
+并与批量 WR 提交结合，使得中间的分片 (chunk) WR 不产生 CQE（Completion Queue Entry），
+从而避免 RNIC 对每个 WR 都通过 PCIe DMA 写回主机，大幅减轻 NIC 和 PCIe 总线写回负担。
+仅在 WR 链表满或是逻辑消息的最后一个 WR 设置为触发 Signal，以保证发送方能够及时获知传输完成状态，
+并进行批量的 WR 链表缓冲区复用。这样不仅保证了语义正确，也最大限度地降低了开销。
 
-在 \sysname 内部，这些优化与前面提到的分片（chunking）、带立即数的 RDMA write + notify、以及用于 GPU 显存一致性的 \texttt{Flusher} 机制配合。具体来说，当发送大消息时，系统会将消息拆为多个分片，对这些分片构建多个 WR 并以链表形式批量提交，中间 WR 标记为 unsignaled，仅最后一个 WR 标记为 signaled + with IMM。RNIC 会一次拉入整个 WR 链 (DMA read)，然后执行分片写操作，当最后一个写完成时触发 CQE，并通过带有立即数的 write\_with\_imm 告知接收端。接收端再启动 \texttt{Flusher} 做 read fence，确保 GPU 可见性后才通知上层，从而兼顾性能和正确性。
+在 \sysname 内部，这些优化与前面提到的分片（chunking）、带立即数的 RDMA write + notify、以及用于 GPU 显存一致性的 \texttt{Flusher} 机制配合。
+具体来说，当发送大消息时，系统会将消息拆为多个分片，对这些分片构建多个 WR 并以链表形式批量提交，中间 WR 标记为 unsignaled，
+仅最后一个 WR 标记为 signaled + with IMM。
+RNIC 会一次拉入整个 WR 链 (DMA read)，然后执行分片写操作，当最后一个写完成时触发 CQE，并通过带有立即数的 write\_with\_imm 告知接收端。
+接收端再启动 \texttt{Flusher} 做 read fence，确保 GPU 可见性后才通知上层，从而兼顾性能和正确性。
 
-通过上述优化，\sysname 的 RDMA 执行器能够在维持正确性（逻辑语义、通知语义、GPU 显存一致性）的前提下，显著减少 CPU-NIC MMIO 调用、降低 NIC 负载与 PCIe 带宽占用，从而在 GPU-to-GPU 大规模数据传输、异步高并发、多优先级调度场景中，获得接近 RDMA 和 NIC 硬件极限的性能表现。
+通过上述优化，\sysname 的 RDMA 执行器能够在维持正确性（逻辑语义、通知语义、GPU 显存一致性）的前提下，
+显著减少 CPU-NIC MMIO 调用、降低 NIC 负载与 PCIe 带宽占用，从而在 GPU-to-GPU 大规模数据传输、异步高并发、多优先级调度场景中，
+获得接近 RDMA 和 NIC 硬件极限的性能表现。
 
 \subsection{小结}
 
@@ -202,25 +317,45 @@ RDMA 链路执行器的设计实现了高性能、低延迟的 GPU-to-GPU 数据
 
 \section{NVLink 链路执行器设计}
 
-与 RDMA 链路执行器相比，NVLink 链路执行器的执行流有所不同。NVLink 通信发生在同一台节点内部通过 NVLink 连接的多 GPU 之间，其数据面不再通过 RDMA 网卡进行，也不存在远端 Completion Queue 等 RDMA 特有的语义。得益于 GPU 之间原生的 Peer-to-Peer 访问能力以及 CUDA IPC 提供的跨进程显存共享机制，NVLink 链路执行器无需构造 Queue Pair，也无需处理 RDMA 报文与多个 Completion Queue 控制的复杂状态机，而是将整个链路简化为控制面共享内存 + 数据面 GPU copy engine 负责数据传输的双层结构。
+与 RDMA 链路执行器相比，NVLink 链路执行器的执行流有所不同。NVLink 通信发生在同一台节点内部通过 NVLink 连接的多 GPU 之间，
+其数据面不再通过 RDMA 网卡进行，也不存在远端 Completion Queue 等 RDMA 特有的语义。
+得益于 GPU 之间原生的 Peer-to-Peer 访问能力以及 CUDA IPC 提供的跨进程显存共享机制，
+NVLink 链路执行器无需构造 Queue Pair，也无需处理 RDMA 报文与多个 Completion Queue 控制的复杂状态机，
+而是将整个链路简化为控制面共享内存 + 数据面 GPU copy engine 负责数据传输的双层结构。
 
-基于这一特性，\sysname 在 NVLink 链路采用发送端驱动的执行方式：Sender 负责主动向 Receiver 发送即将进行通信的内存地址元数据，Receiver 由本地运行时线程池进行轮询，接收 Sender 发送的共享内存地址元数据，再由后台拷贝线程调用 cudaMemcpy 使用 GPU copy engine 完成异步的数据面传输。整个通信均不占用 GPU SM，从而保证推理计算和通信传输之间不存在竞争。
+基于这一特性，\sysname 在 NVLink 链路采用发送端驱动的执行方式：Sender 负责主动向 Receiver 发送即将进行通信的内存地址元数据，
+Receiver 由本地运行时线程池进行轮询，接收 Sender 发送的共享内存地址元数据，
+再由后台拷贝线程调用 cudaMemcpy 使用 GPU copy engine 完成异步的数据面传输。整个通信均不占用 GPU SM，
+从而保证推理计算和通信传输之间不存在竞争。
 
 \subsection{执行流程概述}
 
-NVLink 执行器仍然面向应用层提供 \texttt{send()} 与 \texttt{recv()} 的双向通信接口，但内部的控制语义更接近于参数交换之后 CPU 发起拷贝。当应用层调用 \texttt{send()} 时，发送方首先将待传输缓冲区的 GPU 地址信息封装为一个命令。此处的地址通常由 \texttt{cudaIpcGetMemHandle()} 获取的 \texttt{cudaIpcMemHandle\_t} 构成，也可能直接使用 Peer Memory 中的设备指针。
+NVLink 执行器仍然面向应用层提供 \texttt{send()} 与 \texttt{recv()} 的双向通信接口，
+但内部的控制语义更接近于参数交换之后 CPU 发起拷贝。当应用层调用 \texttt{send()} 时，发送方首先将待传输缓冲区的 GPU 地址信息封装为一个命令。
+此处的地址通常由 \texttt{cudaIpcGetMemHandle()} 获取的 \texttt{cudaIpcMemHandle\_t} 构成，也可能直接使用 Peer Memory 中的设备指针。
 
-接下来需要通过带外通信（Out-of-band Communication，OOB Communication）将命令传输给接收方。由于在 NVLink 执行器面向单节点多 GPU 的场景，可以通过主机进程间共享内存实现高效的数据传输，因此为了实现高效的控制面带外通信性能， \sysname 基于进程间共享内存实现了一个单生产者单消费者队列，Sender 为生产者，Receiver 为消费者。在命令被写入进程间共享内存的单生产者单消费者队列（SPSC Queue）之后，会立即对 Receiver 可见。
+接下来需要通过带外通信（Out-of-band Communication，OOB Communication）将命令传输给接收方。
+由于在 NVLink 执行器面向单节点多 GPU 的场景，可以通过主机进程间共享内存实现高效的数据传输，因此为了实现高效的控制面带外通信性能，
+\sysname 基于进程间共享内存实现了一个单生产者单消费者队列，Sender 为生产者，Receiver 为消费者。
+在命令被写入进程间共享内存的单生产者单消费者队列（SPSC Queue）之后，会立即对 Receiver 可见。
 
-接收方的调度完全由本地线程池驱动。线程池中的轮询线程在每次轮询时，尝试从共享内存 SPSC 队列中取出远端 Sender 投递的命令，并将其放入本地的远端请求队列。同时，应用层调用 \texttt{recv()} 时产生的本地接收请求也通过并发队列进入另一条本地队列。NVLink 执行器内部的匹配逻辑会在两类队列之间根据 \texttt{unique\_id} 进行匹配，将“远端发送 + 本地接收”组成一条拷贝任务（Copy Task），随后将该任务提交给后台拷贝线程等待执行。
+接收方的调度完全由本地线程池驱动。线程池中的轮询线程在每次轮询时，尝试从共享内存 SPSC 队列中取出远端 Sender 投递的命令，
+并将其放入本地的远端请求队列。同时，应用层调用 \texttt{recv()} 时产生的本地接收请求也通过并发队列进入另一条本地队列。
+NVLink 执行器内部的匹配逻辑会在两类队列之间根据 \texttt{unique\_id} 进行匹配，将“远端发送 + 本地接收”组成一条拷贝任务（Copy Task），
+随后将该任务提交给后台拷贝线程等待执行。
 
 这一流程在设计上与 RDMA 执行器保持一致，以配对的方式驱动任务生成，而且同样采用事件通知机制实现异步语义，但控制路径更轻量也更直接。
 
 \subsection{后台拷贝线程与数据面传输}
 
-NVLink 执行器负责执行数据搬运的是后台拷贝线程（Copying Thread）。由于拷贝线程位于 Receiver 侧，在初始化时只需要设置一次 CUDA device 并初始化上下文（CUDA context）。在初始化完成之后，该线程阻塞式等待在任务队列上，从任务队列中取出一条 Copy Task 进行执行。取出的 Copy Task 通过 \texttt{cudaIpcOpenMemHandle()} 或 Peer Memory 机制获得远端发送方 GPU 缓冲区的访问权限。随后，线程在本地 GPU 上调用 \texttt{cudaMemcpy} 或 \texttt{cudaMemcpyAsync}，利用 GPU 内部的 copy engine 执行 GPU-to-GPU 内存拷贝。
+NVLink 执行器负责执行数据搬运的是后台拷贝线程（Copying Thread）。由于拷贝线程位于 Receiver 侧，
+在初始化时只需要设置一次 CUDA device 并初始化上下文（CUDA context）。在初始化完成之后，该线程阻塞式等待在任务队列上，从任务队列中取出一条 Copy Task 进行执行。
+取出的 Copy Task 通过 \texttt{cudaIpcOpenMemHandle()} 或 Peer Memory 机制获得远端发送方 GPU 缓冲区的访问权限。
+随后，线程在本地 GPU 上调用 \texttt{cudaMemcpy} 或 \texttt{cudaMemcpyAsync}，利用 GPU 内部的 copy engine 执行 GPU-to-GPU 内存拷贝。
 
-需要强调的是，这一拷贝不会通过 GPU kernel 实现计算式搬运，因此并不涉及 GPU 流式多处理器（SM）。NVLink 链路上的数据传输完全由 GPU copy engine 实现，属于硬件级搬移，与 RNIC 发起的 RDMA 传输在抽象层级上具备一致性。这样的 SM-free 特性保证了不会占用的计算资源，因此不影响推理任务的高效执行，使得 \sysname 在 NVLink 环境下同样实现了计算与通信的完全解耦。
+需要强调的是，这一拷贝不会通过 GPU kernel 实现计算式搬运，因此并不涉及 GPU 流式多处理器（SM）。
+NVLink 链路上的数据传输完全由 GPU copy engine 实现，属于硬件级搬移，与 RNIC 发起的 RDMA 传输在抽象层级上具备一致性。
+这样的 SM-free 特性保证了不会占用的计算资源，因此不影响推理任务的高效执行，使得 \sysname 在 NVLink 环境下同样实现了计算与通信的完全解耦。
 
 当拷贝完成后，Copying Thread 会执行两类通知操作:
 
@@ -233,19 +368,36 @@ NVLink 执行器负责执行数据搬运的是后台拷贝线程（Copying Threa
 
 \subsection{拷贝线程的可扩展性}
 
-如果采用阻塞式拷贝（\texttt{cudaMemcpy}），对任意一条连接都创建一个独立的拷贝线程，在拷贝线程内部阻塞式调用 \texttt{cudaMemcpy}，那么在单节点多 GPU 场景下，线程数量将随着 GPU 数量的平方增长，导致 CPU 负担过重。且线程切换存在开销，可扩展性较差，在 GPU 数量增多的时候，影响整体性能。例如，如果系统中存在 $N$ 块 GPU，那么总共需要 $N \times (N - 1)$ 条拷贝线程来处理所有可能的 GPU-to-GPU 拷贝任务。
+如果采用阻塞式拷贝（\texttt{cudaMemcpy}），对任意一条连接都创建一个独立的拷贝线程，
+在拷贝线程内部阻塞式调用 \texttt{cudaMemcpy}，那么在单节点多 GPU 场景下，线程数量将随着 GPU 数量的平方增长，
+导致 CPU 负担过重。且线程切换存在开销，可扩展性较差，在 GPU 数量增多的时候，影响整体性能。
+例如，如果系统中存在 $N$ 块 GPU，那么总共需要 $N \times (N - 1)$ 条拷贝线程来处理所有可能的 GPU-to-GPU 拷贝任务。
 
-NVLink 执行器的线程组织结构遵循单 Dst 多 Src 的设计。如果单节点中存在 $N$ 块 GPU，且任意一块 GPU 都具备访问节点内其他 GPU Peer Memory 访问能力，那么每个 GPU 都只需要一条独立的拷贝线程，用来处理其作为目标 GPU 时的所有拷贝任务。这样，总共需要 $N$ 个 Copying Thread，而非 $N \times (N - 1)$ 条。每条线程都绑定其所属 GPU 的 CUDA context，并使用该 GPU 的异步 copy engine 为所有源 GPU 的请求提供服务。
+NVLink 执行器的线程组织结构遵循单 Dst 多 Src 的设计。
+如果单节点中存在 $N$ 块 GPU，且任意一块 GPU 都具备访问节点内其他 GPU Peer Memory 访问能力，
+那么每个 GPU 都只需要一条独立的拷贝线程，用来处理其作为目标 GPU 时的所有拷贝任务。
+这样，总共需要 $N$ 个 Copying Thread，而非 $N \times (N - 1)$ 条。
+每条线程都绑定其所属 GPU 的 CUDA context，并使用该 GPU 的异步 copy engine 为所有源 GPU 的请求提供服务。
 
-这种设计将线程数量与 GPU 数量一一对应，并将所有传入某个 GPU 的流量收敛到该 GPU 的单个 Copying Thread 之上，避免了跨线程的竞争以及过度的上下文切换，使整体架构更具可扩展性。在实际部署中，如 NVSwitch 互联的 8-GPU 拓扑或 HGX 结构上，这种线程布局能够稳定支撑多路并发传输任务而不产生瓶颈。
+这种设计将线程数量与 GPU 数量一一对应，并将所有传入某个 GPU 的流量收敛到该 GPU 的单个 Copying Thread 之上，
+避免了跨线程的竞争以及过度的上下文切换，使整体架构更具可扩展性。
+在实际部署中，如 NVSwitch 互联的 8-GPU 拓扑或 HGX 结构上，这种线程布局能够稳定支撑多路并发传输任务而不产生瓶颈。
 
 \subsection{异步化与进一步优化}
 
-Copying Thread 使用同步的 \texttt{cudaMemcpy} 发起拷贝，即线程必须阻塞直到数据搬移完成。为了进一步提升吞吐，
-并与 GPU 异步执行模型保持一致，NVLink 执行器可以将同步拷贝替换为异步拷贝 \texttt{cudaMemcpyAsync}，并结合 CUDA event 完成通知，实现多路复用的效果。
+Copying Thread 使用同步的 \texttt{cudaMemcpy} 发起拷贝，即线程必须阻塞直到数据搬移完成。
+为了进一步提升吞吐，并与 GPU 异步执行模型保持一致，NVLink 执行器可以将同步拷贝替换为异步拷贝 \texttt{cudaMemcpyAsync}，
+并结合 CUDA event 完成通知，实现多路复用的效果。
 
-在这种模式下，Copying Thread 可以在同一 CUDA stream 上连续提交多个拷贝请求，而无需等待每个请求完成才继续执行。线程仅需记录每个任务对应的 CUDA event，当事件达到完成状态时再触发 \texttt{Event notify} 或向 Sender 回传确认。借助异步拷贝，NVLink 执行器能够在保持 SM-free 的前提下实现高并发、高吞吐的传输能力，其运行机制与现代 GPU 调度框架（如 CUDA Graph 或 NCCL P2P pipeline）更加接近。
+在这种模式下，Copying Thread 可以在同一 CUDA stream 上连续提交多个拷贝请求，而无需等待每个请求完成才继续执行。
+线程仅需记录每个任务对应的 CUDA event，当事件达到完成状态时再触发 \texttt{Event notify} 或向 Sender 回传确认。
+借助异步拷贝，NVLink 执行器能够在保持 SM-free 的前提下实现高并发、高吞吐的传输能力，
+其运行机制与现代 GPU 调度框架（如 CUDA Graph 或 NCCL P2P pipeline）更加接近。
 
 \subsection{小结}
 
-NVLink 链路执行器在控制面上使用进程间共享内存实现了极低开销的跨进程参数交换，在数据面上依赖 GPU Peer Memory 与异步拷贝实现了完全不占用 SM 的高带宽内存搬移。其设计与 RDMA 链路执行器在接口语义上保持一致，在实现路径上充分利用了单机 GPU 互联环境的硬件特性，构建出一个结构简洁而性能极高的 GPU-to-GPU 传输方案。对于大模型推理中频繁出现的张量广播、模型状态同步与分片通信任务而言，NVLink 执行器为 \sysname 提供了极具优势的单机多 GPU 通信能力。
+NVLink 链路执行器在控制面上使用进程间共享内存实现了极低开销的跨进程参数交换，
+在数据面上依赖 GPU Peer Memory 与异步拷贝实现了完全不占用 SM 的高带宽内存搬移。
+其设计与 RDMA 链路执行器在接口语义上保持一致，在实现路径上充分利用了单机 GPU 互联环境的硬件特性，
+构建出一个结构简洁而性能极高的 GPU-to-GPU 传输方案。
+对于大模型推理中频繁出现的张量广播、模型状态同步与分片通信任务而言，NVLink 执行器为 \sysname 提供了极具优势的单机多 GPU 通信能力。
