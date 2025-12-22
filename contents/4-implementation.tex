@@ -717,6 +717,10 @@ GPU 指针的跨进程可见性由 \texttt{NvlinkCopyExecutor} 在后台统一�
 通过将 CUDA IPC handle 的管理逻辑集中在 CopyExecutor 内部，\sysname 将跨进程 GPU 指针管理复杂度屏蔽，
 保证了 handle 生命周期与数据传输严格绑定。
 
+\subsubsection{NvlinkCopyExecutor 优化}
+
+cudaIpcOpenMemHandle 的开销 \todo{优化}
+
 \subsection{匹配与调度机制}
 
 NVLink 执行器的请求的匹配与调度逻辑与 RDMA 链路的类似，同样采用 ``远端发送请求 + 本地接收请求'' 的双队列配对模式。
