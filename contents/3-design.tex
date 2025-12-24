@@ -28,8 +28,15 @@
 \section{系统概述}
 
 为了在 GPU 集群环境下提供稳定、高效且可扩展的通信能力，\sysname 采用了清晰的分层架构设计。
-图 \todo{} 展示了系统的整体结构，包括应用接口层、链路执行层以及运行时三部分。
+图~\ref{fig:sys-arch} 展示了系统的整体结构，包括应用接口层、链路执行层以及运行时三部分。
 分层设计的核心目标在于实现接口与硬件的彻底解耦，使系统能够适配不同的互联技术，并在负载规模扩大时仍保持通信性能的稳定。
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.85\linewidth]{figures/system_arch.png}
+    \caption{\sysname 系统整体架构}
+    \label{fig:sys-arch}
+\end{figure}
 
 \paragraph{应用接口层}
 作为 \sysname 面向用户的最高层抽象，应用接口层提供统一且轻量的通信接口，使用户无需关注底层硬件差异即可提交数据传输请求。
@@ -99,8 +106,15 @@
 链路执行层在调度语义上保持严格统一：所有链路执行器均遵循同一套抽象模型，
 而差异仅体现在底层如何真正执行数据搬运这一实现细节上。
 
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.9\linewidth]{figures/executor.png}
+    \caption{\sysname 链路执行器架构}
+    \label{fig:executor-arch}
+\end{figure}
+
 从运行时视角看，每个链路执行器对外提供一个单一的轮询接口，运行时线程池持续轮询所有执行器，使其逐步推进数据流。
-每一次调用轮询接口都可视为一次``调度片段''：
+每一次调用轮询接口都可视为一次``调度片段''。
 
 执行器在此片段内收集本地与远端的待处理请求，依据统一的算法抽象完成请求匹配、任务分片并在约束下提交拷贝任务。
 

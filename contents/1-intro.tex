@@ -56,7 +56,8 @@ PD 分离系统相比于 PD 混合（PD-Colocation）系统降低了首个令牌
 
 \section{研究现状}
 
-NCCL（NVIDIA Collective Communication Library）是由 NVIDIA 推出的高性能通信库，
+\paragraph{NCCL（NVIDIA Collective Communication Library）}
+是由 NVIDIA 推出的高性能通信库，
 主要面向多 GPU 与多节点环境下的深度学习训练与高性能计算任务。
 其核心目标是为分布式系统提供高效、可扩展的集合通信（Collective Communication）原语，
 包括 All-Reduce、All-Gather、Reduce、Broadcast 等操作，从而降低通信开销、提升分布式训练效率。
@@ -65,14 +66,42 @@ NCCL 针对 NVIDIA GPU 架构进行了深度优化，充分利用 GPU 之间的�
 此外，NCCL 使用拓扑感知的通信算法，通过自动检测系统拓扑结构构建最优通信路径，确保在不同硬件配置下均能获得接近理论峰值的通信带宽。
 作为主流深度学习框架（如 PyTorch 和 TensorFlow）的底层通信模块，NCCL 已成为 GPU 集群环境中高性能集合通信的事实标准，
 在大规模模型训练、推理场景中发挥着关键作用。
+
 然而 NCCL 在进行跨节点 RDMA 通信时，采用代理线程模式，由 CPU 和 GPU 共享信号缓冲区（Signal buffer），
 在 CPU 上启动网卡轮询线程监测通信任务执行情况，并将结果写会信号缓冲区，然后 GPU 端通过轮询信号缓冲区获取通信任务执行结果，
 从而进行网卡-CPU-GPU的跨设备同步。这种代理线程、多级轮询、跨设备同步的设计，
 导致 NCCL 在进行跨节点通信时引入额外延迟，不能应对延迟敏感场景工作负载的需求。
-而且 NCCL 在进行节点内通过 NVLink 的多 GPU 通信时，启动大量 GPU 线程进行 Load/Store 操作，消耗 SM 资源，
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.75\linewidth]{figures/nccl_rdma.png}
+    \caption{NCCL 跨节点 RDMA 通信示意图}
+    \label{fig:nccl-rdma-proxy-thread}
+\end{figure}
+
+NCCL 在进行节点内通过 NVLink 的多 GPU 通信时，启动大量 GPU 线程进行 Load/Store 操作，消耗 SM 资源，
 会和计算任务产生资源竞争，影响计算效率。
 
-NVSHMEM 是由 NVIDIA 公司开发的一种面向 GPU 的、基于 OpenSHMEM 标准的单边通信库，
+% 该图示描述了 NCCL 在节点内通过 NVLink 进行 P2P 通信时的数据流，通过 SM 进行 ld/st，没有利用 Copy Engine。
+% [Src GPU]                                                   [Dst GPU]
+%   SM (send kernel)                                           SM (recv kernel)
+%     |                                                        |   (主要做同步/ptrExchange)
+%     | LD src GPU Memory (send buff)                          |
+%     | ST remote ptr (dst recv buff)                          |
+%     v                                                        v
+%   GPU Memory (src send buff) --NVLink P2P write--> GPU Memory (dst recv buff)
+%                                       ^
+%                                       | (control only)
+%                         head/tail + ptrExchange in ncclSendMem/ncclRecvMem
+%
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.75\linewidth]{figures/nccl_nvlink.png}
+    \caption{NCCL 节点内 NVLink 通信示意图}
+    \label{fig:nccl-nvlink}
+\end{figure}
+
+\paragraph{NVSHMEM} 是一种面向 GPU 的、基于 OpenSHMEM 标准的单边通信库，
 旨在为大规模异构系统中的 GPU 间通信提供高效、可扩展的编程抽象。其设计目标是支持细粒度、低延迟的远程内存访问，
 在以 GPU 为中心、无 CPU 参与情况下，实现多 GPU 之间的直接数据交换。
 NVSHMEM 遵循 Partitioned Global Address Space（PGAS）编程模型，为每个PE（Processing Element）提供一个全局可寻址的对称内存空间，
@@ -83,7 +112,15 @@ NVSHMEM 遵循 Partitioned Global Address Space（PGAS）编程模型，为每�
 相较于 NCCL，NVSHMEM 更加专注于单边通信，适用于需要频繁、细粒度数据交换的应用场景。
 但是 NVSHMEM 仍然依赖 GPU SM 驱动数据传输，在 P2P 通信的场景传输大量的数据时抢占计算资源，影响计算任务的性能。
 
-UCCL-P2P 是加州大学伯克利分校的 Sky Computing Lab 提出的高性能 KV Cache 传输引擎，
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.6\linewidth]{figures/nvshmem_ibgda.png}
+    \caption{NVSHMEM IBGDA 示意图}
+    \label{fig:nvshmem-ibgda}
+\end{figure}
+
+\paragraph{UCCL-P2P} 
+是加州大学伯克利分校的 Sky Computing Lab 提出的高性能 KV Cache 传输引擎，
 提供了 SM-free 的特性，轻量级的项目代码，以及易用性强的编程接口。
 UCCL-P2P 使用 GPU Direct RDMA 技术实现高性能的跨节点 KV Cache 传输，
 与 NCCL 不同的是 UCCL-P2P通过控制面卸载（Control Plane Offloading）技术，
