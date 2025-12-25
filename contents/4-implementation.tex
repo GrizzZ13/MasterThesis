@@ -2,33 +2,72 @@
 
 \chapter{\sysname 系统实现}
 
-\section{系统接口概述}
+\section{总体实现概述}
 
-\sysname 在接口层采用三层抽象结构：应用接口、核心接口以及底层链路执行器。
+\sysname 采用三层架构，自上而下分别是：应用接口层、链路执行器以及运行时。
 其目标是在不暴露 RDMA 或 NVLink 的具体机制的前提下，为上层提供统一且稳定的通信语义。
 
-核心接口层向应用暴露的最主要对象为 \texttt{Sender} 与 \texttt{Recver}，它们构成点对点逻辑通道的抽象：
+图 ~\ref{fig:sender-recver-interface} 展示了应用接口层提供的抽象。
+应用接口层向用户代码暴露了 \texttt{Sender} 与 \texttt{Recver} 纯虚类，它们是点对点通信操作逻辑通道的端口：
 前者负责发起本端到远端的数据传输，后者负责在本端接收远端发送的数据。
-对于应用而言，这些对象提供固定的 \texttt{send()} / \texttt{recv()} 调用约定，与底层链路是基于 RDMA 还是 NVLink 无关。
+对于应用而言，这两个接口提供一致的 \texttt{send()} / \texttt{recv()} 函数调用，
+与底层链路是 RDMA 还是 NVLink 无关。
 
-在不同的传输链路下，Sender 与 Recver 内部分别绑定不同类型的执行器实现：
+\begin{figure}[htbp]
+    \centering
+    \begin{minted}[
+        frame=lines,
+        linenos,
+        fontsize=\small,
+        numbersep=10pt,
+        framesep=3mm
+    ]{cpp}
+class Sender {
+public:
+  virtual shared_ptr<Event> send(uint32_t unique_id, uint64_t addr,
+                                 uint64_t length) = 0;
+  virtual ~Sender() = default;
+};
+
+class Recver {
+public:
+  virtual shared_ptr<Event> recv(uint32_t unique_id, uint64_t addr,
+                                 uint64_t length) = 0;
+  virtual ~Recver() = default;
+};
+    \end{minted}
+    \caption{C++ Sender 与 Recver 接口定义}
+    \label{fig:sender-recver-interface}
+\end{figure}
+
+在不同的传输链路下， \texttt{Sender} 与 \texttt{Recver} 分别对应不同类型的执行器实现：
 RDMA 场景对应 \texttt{RdmaSender} 与 \texttt{RdmaRecver}，
 NVLink 场景对应 \texttt{NvlinkSender} 与 \texttt{NvlinkRecver}。
-但执行器的内部逻辑（例如 RDMA Ticket 匹配、NVLink CUDA IPC 地址交换、控制面队列的使用方式等）均对应用透明。
-应用只需提供唯一标识符（\texttt{unique\_id}）、缓冲区指针以及长度，即可提交一次完整的发送或接收请求。
+但执行器的内部逻辑（例如请求匹配、CUDA IPC Handle 以及地址偏移量交换、控制面队列的使用方式等）均对应用隐藏，
+应用只需提供唯一标识符（\texttt{unique\_id}）、缓冲区地址以及长度，即可提交一次完整的发送或接收请求。
 
-所有发送与接收操作均返回一个 \texttt{Event} 对象用于异步完成通知。
-应用在提交请求后立即获得对应事件，可选择同步等待，也可通过轮询方式检查完成状态。
-事件何时被触发、由链路执行器或运行时在什么条件下调用 \texttt{notify()} 等细节均属于后续章节的职责，不在接口层暴露。
+所有发送与接收操作均返回一个 \texttt{Event} 事件对象指针用于异步完成通知。
+应用在提交请求后立即获得对应事件，可选择同步阻塞等待或是异步检查完成 Event 对象状态的方式，来确认请求是否完成。
+事件何时被触发、由链路执行器在什么条件下调用 \texttt{notify()} 等细节会在后续章节进行讨论，不在接口层暴露。
 
 通过这一轻量化接口设计，\sysname 将应用侧从底层通信机制中彻底解耦，
 使得上层推理框架只需按照统一语义调用 \texttt{send()} / \texttt{recv()}，
 而无需感知实际的数据传输方式、链路差异或控制面结构。
 接口层本身保持稳定，而具体执行路径则在后续章节中根据不同链路类型展开分析。
 
-应用代码调用示例如下所示：
+图 ~\ref{fig:app-send-recv-example} 展示了应用侧通过统一接口提交发送与接收请求的示例，
+后台运行时负责驱动具体的链路执行器完成数据传输任务，
+前台应用只需在返回的时间对象上调用 \texttt{wait()} 就可以显式同步等待请求完成。
 
-\begin{lstlisting}[language=C++,caption={示例：统一接口下的发送与接收},label=lst:kernel]
+\begin{figure}[htbp]
+    \centering
+    \begin{minted}[
+        frame=lines,
+        linenos,
+        fontsize=\small,
+        numbersep=10pt,
+        framesep=3mm
+    ]{cpp}
 // Start background runtime
 auto runtime_handle = /* ... */;
 // Sender side
@@ -37,9 +76,12 @@ send_event->wait();
 // Receiver side
 auto recv_event = recver->recv(id, recv_buffer, size);
 recv_event->wait();
-\end{lstlisting}
+    \end{minted}
+    \caption{应用侧发送与接收调用示例}
+    \label{fig:app-send-recv-example}
+\end{figure}
 
-这一统一接口层为随后的运行时实现、事件机制以及 RDMA / NVLink 执行器的具体逻辑奠定了抽象基础。
+这一统一接口层为随后的运行时实现、事件机制以及 RDMA / NVLink 执行器的具体逻辑打下基础。
 
 \section{运行时实现}
 
@@ -47,19 +89,64 @@ recv_event->wait();
 相比于底层 RDMA / NVLink 执行器中承担的数据面与控制面逻辑，运行时本身不参与传输细节的管理，
 而是专注于为执行器提供一致的轮询调用、线程上下文以及必要的资源隔离，从而保证各类执行器能够在统一框架下协同工作。
 
-运行时的构建过程由 \texttt{RuntimeBuilder} 完成。
-构建器收集用户配置（待驱动的 Sender / Recver 列表、线程数量、CPU 亲和性设置、poll-loop 行为等），
-并在 \texttt{build()} 阶段生成具体的 \texttt{Runtime} 实例。
-该实例在启动后负责创建后台线程池，并按照预先绑定的方式将 Sender 与 Recver 分配给固定线程。
-运行时并不关心执行器的内部协议或链路类型，只要求每个执行器的 \texttt{poll()} 方法具有单线程推进语义，
-绑定策略保证每个执行器的 \texttt{poll()} 只会在单一线程中被调用，从保证了线程安全。
+\begin{figure}[htbp]
+    \centering
+    \begin{minted}[
+        frame=lines,
+        linenos,
+        fontsize=\small,
+        numbersep=10pt,
+        framesep=3mm
+    ]{cpp}
+auto pollables = /* pollable sender and recver objects */;
+auto runtime = RuntimeBuilder()
+                    .with_pollables(std::move(pollables))
+                    .with_num_threads(4)
+                    .with_affinity(cpu_set)
+                    .build()
+                    .unwrap();
+auto handle = runtime->start();
+    \end{minted}
+    \caption{运行时初始化流程}
+    \label{fig:runtime-init}
+\end{figure}
 
-在启动阶段，运行时根据构建器提供的 CPU 集合参数为每个后台线程设置线程亲和性。
+图 ~\ref{fig:runtime-init} 展示了运行时的初始化和启动流程。
+其构造过程由 \texttt{RuntimeBuilder} 构造器完成。
+构造器收集用户配置，包括可驱动的对象列表、线程数量、CPU 亲和性以及轮询间隔等，
+并调用工厂方法 \texttt{build()} 构造具体的 \texttt{Runtime} 对象。
+该对象在启动后负责创建后台线程池，并按照预先绑定的方式将 Sender 与 Recver 以及其他可驱动对象分配给固定线程。
+
+运行时并不关心执行器的内部协议或链路类型，只要求其符合可驱动对象的接口定义（如图 ~\ref{fig:pollable-interface}），
+并且其 \texttt{poll()} 方法具有单线程推进语义，
+绑定固定线程策略保证每个执行器的 \texttt{poll()} 只会在单一线程中被调用，确保线程安全。
+
+\begin{figure}[htbp]
+    \centering
+    \begin{minted}[
+        frame=lines,
+        linenos,
+        fontsize=\small,
+        numbersep=10pt,
+        framesep=3mm
+    ]{cpp}
+class Pollable {
+public:
+  virtual void poll() = 0;
+  virtual ~Pollable() = default;
+};
+    \end{minted}
+    \caption{可驱动对象接口定义}
+    \label{fig:pollable-interface}
+\end{figure}
+
+
+在启动阶段，运行时根据构造器提供的 CPU 集合参数为每个后台线程设置线程亲和性。
 对于跨涉及网卡和跨 NUMA 内存的执行器，这一策略可以避免执行器在轮询时发生跨 NUMA 节点的内存访问，
 而在 NVLink 场景下则有助于保持后台拷贝线程与前台应用线程之间的调度稳定性。
-线程启动后进入标准化的轮询循环（poll-loop）：根据线程本地列表依次调用绑定的执行器的 \texttt{poll()}，
-并根据用户配置决定是否在每轮轮询后进行短暂休眠。poll-loop 的工作方式在运行时层保持统一，
-而具体的状态推进逻辑则由执行器自行实现。
+线程启动后进入标准化的轮询循环，根据线程本地列表依次调用绑定的执行器的 \texttt{poll()}，
+并根据用户配置决定是否在每轮轮询后进行短暂休眠。
+轮询循环运行时层面保持统一，而具体的状态推进逻辑则由执行器自行实现。
 
 可配置的 \texttt{poll\_interval} 为运行时在低延迟与低 CPU 占用之间提供了控制手段。
 非零间隔会令线程在两次轮询间隔中进行短时间的休眠，使得运行时更适合低负载与多租户环境；
@@ -68,23 +155,9 @@ recv_event->wait();
 
 运行时的职责可以概括为三个方面：
 第一，为所有链路执行器提供统一、隔离且无锁的轮询环境；
-第二，通过线程绑定与亲和性控制确保执行器的 \texttt{poll()} 在稳定的上下文中运行；
-第三，为事件机制与上层接口层提供一个可靠的调度基础，使通信请求能够在后台持续推进。
-数据传输、请求匹配、可见性保证等链路相关逻辑均由后续章节介绍的 RDMA / NVLink 执行器负责。
-
-下面给出典型的运行时初始化过程示例：
-
-\begin{lstlisting}[language=C++,caption={Runtime Initialization},label=lst:kernel-runtime-init]
-auto runtime = RuntimeBuilder()
-    .with_senders(std::move(senders))
-    .with_recvers(std::move(recvers))
-    .with_poll_interval(10us)
-    .with_num_threads(4)
-    .with_affinity(cpu_set)
-    .build()
-    .unwrap();
-auto handle = runtime->start();
-\end{lstlisting}
+第二，通过线程绑定与亲和性控制确保执行器的 \texttt{poll()} 在稳定的线程上下文中运行；
+第三，为上层接口层提供一个可靠的调度基础，使通信请求能够在后台持续推进。
+数据传输、请求匹配、可见性保证等链路相关逻辑均由后续章节 \todo{ref} 介绍的 RDMA / NVLink 执行器负责。
 
 通过这样的设计，运行时为 \sysname 提供了一个与链路类型无关的调度基础，
 使 RDMA 与 NVLink 执行器能够在相同的模型下运行，同时保持系统整体结构的模块化与可扩展性。
@@ -95,6 +168,46 @@ auto handle = runtime->start();
 应用层在发起发送或接收请求后，会立即获得一个轻量级事件对象（\texttt{Event}），并可在之后通过显式等待或周期性轮询查询其状态。
 该事件机制基于 C++20 原子变量及其等待/通知原语实现，避免了传统条件变量所需的内核态切换，
 从而在多线程环境中提供更高效且可扩展的同步能力。
+
+\begin{figure}[htbp]
+    \centering
+    \begin{minted}[
+        frame=lines,
+        linenos,
+        fontsize=\small,
+        numbersep=10pt,
+        framesep=3mm
+    ]{cpp}
+class Event {
+private:
+  std::atomic<bool> finished_ = false;
+
+public:
+  bool is_notified() const {
+    return this->finished_.load(std::memory_order_acquire);
+  }
+
+  void notify() {
+    this->finished_.store(true, std::memory_order_release);
+#ifndef BUSY_WAIT
+    this->finished_.notify_all();
+#endif
+  }
+
+  void wait() {
+#ifndef BUSY_WAIT
+    this->finished_.wait(false, std::memory_order_acquire);
+#else
+    while (!this->finished_.load(std::memory_order_acquire)) {
+      _mm_pause();
+    }
+#endif
+  }
+};
+    \end{minted}
+    \caption{事件类核心结构和方法}
+    \label{fig:event-class}
+\end{figure}
 
 事件对象内部仅维护一个原子布尔值 \texttt{finished\_}，用于记录事件是否已完成。
 围绕这一标志位，\sysname 提供了两种等待策略，可针对不同应用场景灵活选用。
@@ -110,49 +223,16 @@ auto handle = runtime->start();
 消费者在检测到事件完成后能够正确观察到生产者线程对共享状态的所有更新。
 
 通过同时提供阻塞式等待与忙等待两种策略，\sysname 可以在 CPU 利用率与最短延迟之间取得灵活平衡，
-使系统在不同硬件和负载条件下均能保持高效运行。\todo{图X} 展示了事件类的核心结构，其完整实现如代码 \ref{lst:kernel} 所示。
-
-\begin{lstlisting}[language=C++,caption={Event Implementation},label=lst:kernel]
-class Event {
-    /* Ignore constructor and destructor */
-    std::atomic<bool> finished_ = false;
-public:
-    bool is_notified() const {
-        return this->finished_.load(std::memory_order_acquire);
-    }
-
-    void notify() {
-        this->finished_.store(true, std::memory_order_release);
-#ifndef BUSY_WAIT
-        this->finished_.notify_all();
-#endif
-    }
-
-    void wait() {
-#ifndef BUSY_WAIT
-        this->finished_.wait(false, std::memory_order_acquire);
-#else
-        while (!this->finished_.load(std::memory_order_acquire)) {
-            _mm_pause();
-        }
-#endif
-    }
-};
-\end{lstlisting}
+使系统在不同硬件和负载条件下均能保持高效运行。图 ~\ref{fig:event-class} 展示了事件类的核心结构。
 
 \section{应用接口和链路执行器封装}
 
 在统一接口层的设计中，\sysname 采用轻量的 \texttt{Sender} 与 \texttt{Recver} 两类封装对象，
 将 RDMA 与 NVLink 两种链路下的执行器实现隐藏在一致的抽象之后，使得应用在调用 \texttt{send()} 与 \texttt{recv()} 时完全无需关注底层链路的差异。
 接口层本身不包含任何传输逻辑，只负责对用户的请求进行封装和转发，调用具体的链路执行器实现进行处理。
-接口层也将不同执行器的 \texttt{poll()} 进行封装，
-运行时轮询阶段调用 \texttt{Sender} 和 \texttt{Recver} 的 \texttt{poll()} 方法时，实际会被分派（dispatch）到对应的底层实现。
-
-接口层的目标并非构建传统意义上的通用设备抽象，而是为系统提供一种对底层执行路径的透明选择机制，
-使同一份应用代码能够在不同硬件环境中无须修改即可运行，运行时根据实例化方式自动将请求转交给 RDMA 或 NVLink 执行器。
-为此，\texttt{Sender} 与 \texttt{Recver} 在内部维护一个 \texttt{BackendType} 枚举，
-并在关键路径上依据该枚举进行显式分派。之所以采用这种手动分派，而不依赖虚函数机制，
-是为了避免高频调用场景下额外的间接跳转开销，从而保持接口层的最小性能损耗。
+具体的链路执行器也继承了 \texttt{Pollable} 并重写了 \texttt{poll()} 方法，
+运行时轮询阶段调用具体链路执行器对象的 \texttt{poll()} 方法时，
+通过 C++ 的动态多态分派到对应的底层实现。
 
 从应用视角来看，所有的发送流程都遵循固定语义：
 在给定标识符（\texttt{unique\_id}）、起始地址与长度后，接口层立即为这个传输构造一个 \texttt{Event} 并返回。
@@ -162,52 +242,27 @@ public:
 内部实现中，采用了基于 moodycamel 的并发多生产者多消费者队列（ConcurrentQueue）作为接口层与执行器之间的消息传递数据结构。
 对于 RDMA 场景，该队列承载由应用层 \texttt{send()} / \texttt{recv()} 产生的本地请求，
 并交由执行器在 \texttt{poll()} 阶段取出，实现严格的单线程状态推进语义；
-对于 NVLink 场景，队列则承担本地命令缓存角色，与来自进程间共享内存（IPC SHM）的远端命令一并进入匹配逻辑。
+对于 NVLink 场景，队列则承担本地命令缓存角色，与来自进程间共享内存 SPSC 队列的远端命令一并进入匹配逻辑。
 ConcurrentQueue 的无锁特性保证了接口层的请求提交端完全无阻塞，不会因后台执行器的处理速度而影响应用层的前向执行通道；
 同时，其基于 C++ 原子语义的实现确保不同线程间的生产-消费关系具有清晰的内存可见性边界，
 避免出现乱序加载导致的请求丢失或重复消费。
 
-接口层的另一个关键工作是维护内存访问凭证的查询功能。在 RDMA 场景下，发送者需要从 MemoryRegion 中查询本地地址对应的 lkey，而接收者需要查询接收缓冲区对应的 rkey，内存访问凭证是 lkey 和 rkey；而在 NVLink 场景下，执行器会利用 CUDA IPC 机制获取到的 \texttt{cudaIpcMemHandle\_t} 进行跨进程的内存拷贝，内存访问凭证是 \texttt{cudaIpcMemHandle\_t} 。因此接口层使用的 \texttt{lookup\_key()} 尽管名称相同，但在不同后端会直接分派至不同的实现路径。通过这种统一接口 + 手动分派的策略，\sysname 在保证高性能的前提下实现了透明的跨链路语义。
+% 接口层的另一个关键工作是维护内存访问凭证的查询功能。
+% 在 RDMA 场景下，发送者需要从 MemoryRegion 中查询本地地址对应的 lkey，
+% 而接收者需要查询接收缓冲区对应的 rkey，内存访问凭证是 lkey 和 rkey；
+% 而在 NVLink 场景下，执行器会利用 CUDA IPC 机制获取到的 \texttt{cudaIpcMemHandle\_t} 进行跨进程的内存拷贝，
+% 内存访问凭证是 \texttt{cudaIpcMemHandle\_t} 。
+% 因此接口层使用的 \texttt{lookup\_key()} 尽管名称相同，但在不同后端会直接分派至不同的实现路径。
+% 通过这种统一接口 + 手动分派的策略，\sysname 在保证高性能的前提下实现了透明的跨链路语义。
 
 接口层与运行时之间的边界十分清晰。运行时不会干预 \texttt{send()} / \texttt{recv()} 的逻辑构造，
-也不关心底层使用的是 RDMA ibverbs 还是通过 NVLink 的进行跨 GPU 的内存拷贝。
+也不关心底层使用的是 RDMA libibverbs 还是通过 NVLink 的进行跨 GPU 的内存拷贝。
 运行时仅负责保证 \texttt{poll()} 方法在绑定线程上按固定频率执行，
 接口层则在 \texttt{poll()} 中调用底层执行器的对应方法，使得真正的数据面与控制面推进逻辑在执行器内部完成，
 而接口层始终保持无状态、轻量级的请求入口角色。
 
-下面的代码展示了接口层的结构，通过静态构造方法区分底层后端类型：
-
-\begin{lstlisting}[language=C++,caption={Application Interface Layer},label=lst:app-interface]
-template<typename T> 
-using Arc = std::shared_ptr<T>;
-
-enum class BackendType { RDMA, NVLINK };
-
-class Sender {
-private:
-    Key lookup_key(uint64_t addr, uint32_t length) const;
-    void poll(); /* dispatch to underlying implementation */
-public:
-    static Arc<Sender> create_with_rdma(Arc<RdmaSender> sender);
-    static Arc<Sender> create_with_nvlink(Arc<NvlinkSender> sender);
-    Arc<Event> send(uint32_t unique_id, void* addr, size_t length);
-    BackendType backend_type() const;
-};
-
-class Recver {
-private:
-    Key lookup_key(uint64_t addr, uint32_t length) const;
-    void poll(); /* dispatch to underlying implementation */
-public:
-    static Arc<Recver> create_with_rdma(Arc<RdmaRecvr> recver);
-    static Arc<Recver> create_with_nvlink(Arc<NvlinkRecver> recver);
-    Arc<Event> recv(uint32_t unique_id, void* addr, size_t length);
-    BackendType backend_type() const;
-};
-
-\end{lstlisting}
-
-接口层最终形成了一个稳定且扩展性良好的抽象边界：它既屏蔽了 RDMA 与 NVLink 在队列结构、匹配策略、可见性保证上的巨大差异，
+接口层最终形成了一个稳定且扩展性良好的抽象边界：
+它既屏蔽了 RDMA 与 NVLink 在队列结构、匹配策略、可见性保证上的巨大差异，
 又通过事件机制与运行时轮询模型提供统一的调度语义，使得通信库整体可以在异构网络环境中维持一致的逻辑行为。
 这一接口层是 \sysname 全局结构中轻量级的一层，但是它可以将应用、运行时与执行器串联在一起，发挥了重要的作用。
 
@@ -215,15 +270,19 @@ public:
 
 \subsection{初始化阶段}
 
-RDMA 链路执行器的实现分为两层：底层的 \texttt{rdma\_util} 封装 \texttt{libibverbs} 接口并以 RAII 管理 RDMA 资源，
-上层的 \texttt{executor\_rdma} 则利用这些抽象构建发送端 \texttt{RdmaSender}、接收端 \texttt{RdmaRecver} 以及维护 GPU Direct RDMA 一致性的 \texttt{RdmaFlusher}。
+RDMA 链路执行器的实现分为两层：
+底层的 \texttt{rdma\_util} 封装 \texttt{libibverbs} 接口并以 RAII 管理 RDMA 资源，
+上层的 \texttt{executor\_rdma} 则利用这些抽象构建发送端 \texttt{RdmaSender}、
+接收端 \texttt{RdmaRecver} 以及维护 GPU Direct RDMA 一致性的 \texttt{RdmaFlusher}。
 初始化阶段的核心任务包括：创建 RDMA 基础资源、完成 QP 握手、分配控制面缓冲区及 MR 注册。
 
 \paragraph{RDMA 基础资源创建}
 
-\texttt{rdma\_util} 中的封装了 RDMA 资源的创建与管理。
-核心对象包括 \texttt{Context}、\texttt{ProtectionDomain}、\texttt{CompletionQueue}以及 \texttt{RcQueuePair}。
-这些对象均通过静态工厂方法进行构造，返回智能指针以管理生命周期，并在析构函数中负责释放底层资源，确保 RAII 语义。
+\texttt{rdma\_util} 封装了 RDMA 资源的创建与管理，
+核心包括 \texttt{Context}、\texttt{ProtectionDomain}、
+\texttt{CompletionQueue}以及 \texttt{RcQueuePair}。
+这些类均通过静态工厂方法进行构造，返回智能指针以管理生命周期，
+并在析构函数中负责释放底层资源，确保 RAII 语义。
 
 执行过程如下：
 
@@ -232,38 +291,49 @@ RDMA 链路执行器的实现分为两层：底层的 \texttt{rdma\_util} 封装
           再使用 \texttt{ibv\_open\_device} 打开对应的 \texttt{ibv\_context}。
     \item 保护域与完成队列对创建：\texttt{ProtectionDomain} 使用 \texttt{ibv\_alloc\_pd} 构造，
           \texttt{CompletionQueue} 使用 \texttt{ibv\_create\_cq} 创建发送 CQ 和接收 CQ。
-    \item QP 创建：\texttt{RcQueuePair::create()} 将上述资源组合生成可靠连接类型（Reliable Connection，RC）的 QP，
+    \item QP 创建：\texttt{RcQueuePair::create()} 将上述资源组合生成可靠连接类型队列对（Reliable Connected QP），
           并自动负责析构阶段的资源回收。
 \end{enumerate}
 
-\begin{lstlisting}[language=C++,caption={RDMA initialization},label=lst:rdma-init]
-template<typename T>
+\begin{figure}[htbp]
+    \centering
+    \begin{minted}[
+        frame=lines,
+        linenos,
+        fontsize=\small,
+        numbersep=10pt,
+        framesep=3mm
+    ]{cpp}
+template <typename T>
 using Result = result::Result<T, rdma_util::Error>;
+
 class RcQueuePair {
 public:
-    // Create RC QP with different inputs
-    static Result<unique_ptr<RcQueuePair>> create(/*...*/) noexcept;
-    // Used to establish connection
-    Result<HandshakeData> get_handshake_data(/*...*/) noexcept;
-    Result<void> bring_up(/*...*/) noexcept;
-    // RDMA opreations
-    int post_send_read(/*...*/) noexcept;
-    int post_send_write(/*...*/) noexcept;
-    int post_send_write_with_imm(/*...*/) noexcept;
-    int post_send_wrs(/*...*/) noexcept;
-    int post_recv_wrs(/*...*/) noexcept;
-    int poll_send_cq_once(/*...*/) noexcept;
-    int poll_recv_cq_once(/*...*/) noexcept;
+  // Create RC QP with different inputs
+  static Result<unique_ptr<RcQueuePair>> create(/*...*/) noexcept;
+  // Used to establish connection
+  Result<HandshakeData> get_handshake_data(/*...*/) noexcept;
+  Result<void> bring_up(/*...*/) noexcept;
+  // RDMA opreations
+  void fill_wr(ibv_send_wr&) noexcept;
+  int post_send_wrs(ibv_send_wr* wrs) noexcept;
+  int post_recv_wrs(ibv_recv_wr* wrs) noexcept;
+  int poll_send_cq_once(/*...*/) noexcept;
+  int poll_recv_cq_once(/*...*/) noexcept;
 };
-\end{lstlisting}
+    \end{minted}
+    \caption{RDMA 资源初始化}
+    \label{fig:rdma-init}
+\end{figure}
 
 \paragraph{QP 握手与状态迁移}
 
 可靠连接队列对（RCQP）要进入可通信状态，必须经历 INIT $\rightarrow$ RTR $\rightarrow$ RTS 的三段状态迁移，
 由于这一步要求通信双方根据对端配置进行状态修改，因此也被称为“握手”。
-\texttt{rdma\_util} 通过通信双方的 QP 交换 \texttt{HandshakeData} 并且显式调用 \texttt{RcQueuePair::bring\_up()} 完成这一握手过程，
+\texttt{rdma\_util} 通过通信双方的 QP 交换 \texttt{HandshakeData}
+并且显式调用 \texttt{RcQueuePair::bring\_up()} 完成这一握手过程，
 传输 \texttt{HandshakeData} 结构需要通过带外信道完成，
-\sysname 提供了一套简单了基于 TCP 的 RPC 框架，支持在初始化阶段交换该结构。
+\sysname 提供了一套简单了基于 TCP 的远程过程调用（RPC）框架，支持在初始化阶段交换该结构。
 
 \texttt{bring\_up()} 会使用 \texttt{ibv\_modify\_qp} 完成所有修改，并在必要时查询当前状态避免错误重复配置。
 \texttt{bring\_up()} 的具体步骤如下：
@@ -281,29 +351,55 @@ public:
 \texttt{RdmaSender} 与 \texttt{RdmaRecver} 均会分配固定大小的数组作为控制面消息的缓冲区，并将其注册为 MR，用于进行高性能控制面通信。
 以下代码展示了 MR 的创建过程：
 
-\begin{lstlisting}[language=C++,caption={MR setup in executor\_rdma},label=lst:rdma-mr]
+\begin{figure}[htbp]
+    \centering
+    \begin{minted}[
+        frame=lines,
+        linenos,
+        fontsize=\small,
+        numbersep=10pt,
+        framesep=3mm
+    ]{cpp}
 auto pd = /* Create Protection Domain */;
 auto size = sizeof(RdmaTicket) * kMagic;
 auto buf = shared_ptr<void>(std::aligned_alloc(64, size), std::free);
 auto mr = MemoryRegion::create(pd, std::move(buf), size).unwrap();
 // After that, buf can be used for RDMA operations
-\end{lstlisting}
+    \end{minted}
+    \caption{内存区域（MR）创建}
+    \label{fig:memory-region-setup}
+\end{figure}
 
 \paragraph{RdmaFlusher 实现}
 
-对于 GPU Direct RDMA，网卡完成 RDMA WRITE WITH IMM 并在 CPU 侧收到完成事件，
-并不意味着数据已经刷新到 GPU Memory 中。为此，\texttt{executor\_rdma} 初始化阶段基于环回 QP 构造了一个 Flusher，
-用于主动触发 RDMA READ 以保证 PCIe ordering，从而确保 GPU 能看到之前 NIC 发起的写。
-该 QP 的发送与接收都指向自己，通过对 GPU 地址执行 RDMA READ，PCIe 会保证所有先前写入的数据在此 READ 之后对 GPU 可见。
+\todo{更多细节}
 
-\begin{lstlisting}[language=C++,caption={Flusher initialization},label=lst:rdma-flusher-init]
+对于 GPU Direct RDMA，网卡完成 RDMA Write with Imm 并在 CPU 侧收到完成事件，
+并不意味着数据已经刷新到 GPU Memory 中。
+因此 RDMA 链路执行器在初始化阶段基于环回 QP 构造了一个 Flusher，
+用于主动触发 RDMA READ 以保证 PCIe ordering，从而确保 GPU 能看到之前 NIC 发起的写。
+该 QP 的发送与接收都指向自己，通过对 GPU 地址执行 RDMA READ，
+PCIe 会保证所有先前写入的数据在此 READ 之后对 GPU 可见。
+
+\begin{figure}[htbp]
+    \centering
+    \begin{minted}[
+        frame=lines,
+        linenos,
+        fontsize=\small,
+        numbersep=10pt,
+        framesep=3mm
+    ]{cpp}
 // Create Reliable Connection QP
 auto qp = RcQueuePair::create(pd).unwrap();
 // Connect QP to itself
 qp->bring_up(qp->get_handshake_data().unwrap()).unwrap();
 // Create RDMA Flusher
 auto flusher = RdmaFlusher::create(std::move(qp)).unwrap();
-\end{lstlisting}
+    \end{minted}
+    \caption{Flusher 创建流程}
+    \label{fig:flusher-setup}
+\end{figure}
 
 \subsection{运行阶段}
 
@@ -313,90 +409,73 @@ auto flusher = RdmaFlusher::create(std::move(qp)).unwrap();
 
 发送端 \texttt{RdmaSender} 的运行主逻辑封装在 \texttt{poll()} 中，通过依次调用四个内部函数推进状态：
 
-\todo{或许写成伪代码？}
-
-\begin{lstlisting}[language=C++,caption={RdmaSender Poll},label=lst:rdma-sender-poll]
-class RdmaSender {
-    void drain_remote_recv_requests();
-    void drain_local_send_requests();
-    void build_and_post();
-    void handle_completions();
-}
-\end{lstlisting}
+% \begin{figure}[htbp]
+%     \centering
+%     \begin{minted}[
+%         frame=lines,
+%         linenos,
+%         fontsize=\small,
+%         numbersep=10pt,
+%         framesep=3mm
+%     ]{cpp}
+% void RdmaSender::poll() {
+%   this->drain_remote_recv_requests();
+%   this->drain_local_send_requests();
+%   this->build_and_post();
+%   this->handle_completions();
+% }
+%     \end{minted}
+%     \caption{RdmaSender 运行主逻辑}
+%     \label{fig:rdma-sender-poll}
+% \end{figure}
 
 \paragraph{\texttt{drain\_remote\_recv\_requests()}}
-负责从 RDMA Recv CQ 中取回由接收端发来的 \texttt{RdmaTicket}，
-并将其整理为按 \texttt{unique\_id} 分组的待匹配队列。具体流程如下：
+负责从 RDMA Recv 队列取出由接收端发来的 \texttt{RdmaTicket}，
+并将其整理为按 \texttt{unique\_id} 逻辑通道分组的待匹配队列。具体流程如下：
 
 首先调用 \texttt{poll\_recv\_cq\_once()} 批量轮询接收完成事件，然后对每个成功的 RECV，
-根据 \texttt{wr\_id} 从接收缓冲区中拷贝出对应的 \texttt{RdmaTicket}，
-按照 \texttt{unique\_id} 插入到 \texttt{pending\_remote\_recv\_request\_map\_} 中，为后续的匹配与发送做准备，
-同时立即为该 \texttt{wr\_id} 重新投递 RECV 工作请求，保持网卡 pipeline 始终满载，在不阻塞 CQ 的前提下高效处理控制面请求。
-
-% \begin{lstlisting}[language=C++,caption={Drain remote recv requests},label=lst:rdma-drain-remote]
-% void RdmaSender::drain_remote_recv_requests() {
-%     this->qp_->poll_recv_cq_once(kMagic, this->polled_recv_wcs_);
-%     for (const auto& wc : this->polled_recv_wcs_) {
-%         CHECK_STATUS(/* ... */);
-%         auto wr_id = wc.wr_id;
-%         auto ticket = this->recv_buffer_addr_[wr_id];
-%         this->pending_remote_recv_request_map_[ticket.unique_id]
-%             .push(ticket);
-%         this->qp_->post_recv(
-%             wr_id,
-%             &this->recv_buffer_addr_[wr_id],
-%             sizeof(RdmaTicket),
-%             this->recv_buffer_lkey_
-%         );
-%     }
-% }
-% \end{lstlisting}
+从接收缓冲区中拷贝出对应的 \texttt{RdmaTicket}，
+按照 \texttt{unique\_id} 为键插入到 \texttt{pending\_remote\_recv\_request\_map\_} 中，为后续的匹配与发送做准备，
+同时立即向网卡 Recv 队列重新投递 RECV 工作请求，保持网卡始终有充足槽位可以使用，在不阻塞 CQ 的前提下高效处理控制面请求。
 
 \paragraph{\texttt{drain\_local\_send\_requests()}}
-用于从应用接口层的并发队列中取出本地发送请求，并将其转换为按逻辑通道分组的待发送队列。
+用于从应用接口层的并发队列中取出本地发送请求，也将其转换为按 \texttt{unique\_id} 逻辑通道分组的待发送队列。
 应用侧调用 \texttt{send()} 时，会将包含 \texttt{RdmaTicket} 与对应的 \texttt{Event} 的 \texttt{RdmaCommand} 入队到并发队列中；
 在运行时线程中，\texttt{drain\_local\_send\_requests()} 从并发队列的另一端批量出队多个命令，
-将其中的 \texttt{ticket} 和 \texttt{evnt} 按照 \texttt{unique\_id} 保存，
-这样可以在不加锁的情况下，将无序到达的应用发送请求整理为 per-channel 队列，为后续匹配和构造 WR 提供基础。
+将其中的 \texttt{ticket} 和 \texttt{event} 按照 \texttt{unique\_id} 保存，
+这样可以在不加锁的情况下，将无序到达的应用发送请求归类到多个逻辑通道，为后续匹配和构造 WR 构造提供基础。
 
-% \begin{lstlisting}[language=C++,caption={Drain local send requests},label=lst:rdma-drain-local]
-% void RdmaSender::drain_local_send_requests() {
-%     this->send_request_command_queue_.try_dequeue_bulk(/* ... */);
-%     for (auto [ticket, event]: commands) {
-%         auto id = ticket.unique_id;
-%         this->pending_local_send_request_map_[id].push(ticket);
-%         this->pending_local_send_event_map_[id].push(event);
-%     }
-% }
-% \end{lstlisting}
-
-\paragraph{build\_and\_post()} 职责是在发送端维护的控制面队列中执行请求匹配，
-并将配对后的传输任务按照最大分片大小拆分为一系列连续的 Work Request（WR），最终以批量方式提交给网卡。
+\paragraph{\texttt{build\_and\_post()}} 职责是在发送端维护的控制面队列中执行请求匹配，
+并将配对后的传输任务按照最大分片大小拆分为一系列连续的工作请求（Work Request，WR），最终以批量方式提交给网卡。
 其核心流程由三部分构成：跨队列匹配、分片生成与批量门铃触发。
-算法 \ref{alg:rdma-build-and-post-simplified} 展示了请求匹配和发送的核心逻辑。
+算法 \ref{alg:rdma-build-and-post} 展示了请求匹配和发送的核心逻辑。
 
 首先逐一遍历所有 \texttt{unique\_id} 对应的远端接收队列与本地发送队列,当且仅当两端均存在待处理的请求，
-且发送 WR 数组仍有剩余槽位时，算法取出两端的请求票据并进入匹配过程。
+且发送 WR 数组仍有剩余槽位时，算法取出两端的请求票据 \texttt{RdmaTicket} 并进入匹配过程。
 由于每一次传输的总长度由票据给定，函数据此确定当前尚未完成的剩余字节数。
 
-随后进入分片循环。对每一次迭代，若剩余长度大于最大分片大小，则生成一条中间 WR；
-否则生成最后一条 WR。两类 WR 的生成逻辑统一抽象为 \texttt{fill\_wr()}，其内部负责写入本地与远端地址、长度、键值以及标识符等必要元信息。
+随后进入分片循环，若剩余字节数大于最大分片大小，
+则生成长度为最大分片大小的 RDMA Write 工作请求，并且标识请求尚未完成；
+否则生成长度为剩余字节数的 RDMA Write with Imm 工作请求，把当前请求的逻辑通道标识符通过立即数传递给对端，
+并在其 wr id 中编码中标记为这个待处理请求的最后一个分片。
+两类 WR 的生成逻辑统一抽象为 \texttt{fill\_wr()}，其内部负责写入本地与远端地址、长度、键值以及标识符等必要元信息。
 每构造一条新的 WR，都将其链接到上一条 WR 之后，从而形成一个连续的链表以便批量提交。
-同时，算法维护当前门铃中已累积的 WR 数量，用于确定何时触发信号。
+同时，算法维护当前已累积的 WR 链表长度，用于确定何时触发信号。
 
-当 WR 属于某个传输的最后一个分片，或 WR 数组空间已用尽时，该 WR 被标记为“需要信号”。
-信号标记确保网卡在处理完这批 WR 之后生成一次完成事件。
-每次遇到这样的 WR，当前门铃长度被重置为零，表示一次批次的结束。
+当 WR 属于某个待处理请求的最后一个分片，或 WR 数组空间已用尽时，该 WR 被设置为“需要显式信号”。
+显示信号确保网卡在处理完这批 WR 之后，在本地网卡的发送完成队列（send completion queue）生成一次工作完成（Work Completion，WC）。
+每次设置显式信号 WR，当前 WR 链表长度被重置为零，表示一个批次的结束。
 
-分片循环结束后，若对应的远端和本地请求已全部消费，则从队列中弹出；
+分片循环结束后，若对应的远端和本地请求已全部完成，则从队列中弹出；
 若仍有剩余，则更新票据的地址与剩余长度，等待下一轮构造。
 
-当本轮至少构造出一条 WR 时，算法以链表首元素作为入口，仅通过一次提交操作即可将整个 WR 链交付给网卡，由硬件顺序执行。
-这种“批量门铃”模式显著减少了 MMIO ，是高性能 RDMA 发送端的常见优化方式。
+当本轮至少构造出一条 WR 时，算法以链表首元素作为入口，
+仅通过一次提交操作即可将整个 WR 链表交付给网卡，由硬件以链表顺序处理。
+这种批处理显著减少了 MMIO ，是高性能 RDMA 发送端的常见优化方式。
 
 \begin{algorithm}[t]
-    \caption{RDMA sender request matching and batched chunk posting}
-    \label{alg:rdma-build-and-post-simplified}
+    \caption{RdmaSender 请求匹配和批处理算法}
+    \label{alg:rdma-build-and-post}
     \KwIn{
         map of remote recv queues $\mathit{Remote}[id]$;
         map of local send queues $\mathit{Local}[id]$;
@@ -420,22 +499,18 @@ class RdmaSender {
         }{
             $doorbell\_len \gets doorbell\_len + 1$ \;
 
-            $remote \gets RemoteQueue.\text{front}()$ \;
-            $local \gets LocalQueue.\text{front}()$ \;
+            $remote,\, local \gets RemoteQueue.\text{front}(),\, LocalQueue.\text{front}()$ \;
 
             $len \gets local.length$ \;
             $chunk\_size \gets \min(\texttt{packet\_size},\ len)$ \;
 
             \eIf{$chunk\_size = len$}{
-                $opcode \gets \texttt{WRITE\_WITH\_IMM}$ \;
-                $request\_finished \gets \text{true}$ \;
+                $opcode,\, request\_finished \gets \texttt{WRITE\_WITH\_IMM},\, \text{true}$ \;
             }{
-                $opcode \gets \texttt{WRITE}$ \;
-                $request\_finished \gets \text{false}$ \;
+                $opcode,\, request\_finished \gets \texttt{WRITE},\, \text{false}$ \;
             }
 
-            $wr\_idx \gets wr\_occupied$ \;
-            $wr\_occupied \gets wr\_occupied + 1$ \;
+            $wr\_idx,\, wr\_occupied \gets wr\_occupied,\, wr\_occupied + 1$ \;
 
             \texttt{fill\_wr}$(wr\_idx,\ id,\ remote,\ local,\ chunk\_size,\ opcode,\ doorbell\_len)$ \;
 
@@ -444,12 +519,9 @@ class RdmaSender {
                 $LocalQueue.\text{pop}()$ \;
             }
             \Else{
-                $remote.addr \gets remote.addr + chunk\_size$ \;
-                $remote.length \gets remote.length - chunk\_size$ \;
-                $local.addr \gets local.addr + chunk\_size$ \;
-                $local.length \gets local.length - chunk\_size$ \;
-                $RemoteQueue.\text{front}() \gets remote$ \;
-                $LocalQueue.\text{front}() \gets local$ \;
+                $local.\text{advance}(chunk\_size) $ \;
+                $remote.\text{advance}(chunk\_size) $ \;
+                $RemoteQueue.\text{front}(),\, LocalQueue.\text{front}() \gets remote,\, local$ \;
             }
 
             \If{$opcode = \texttt{WRITE\_WITH\_IMM}$ \textbf{or} $wr\_occupied = N$}{
@@ -468,79 +540,64 @@ class RdmaSender {
 \paragraph{\texttt{handle\_completions()}} 通过 \texttt{poll\_send\_cq\_once()} 轮询发送完成队列，
 检查完成事件并进行处理。
 
-对于成功的完成事件，首先从 \texttt{wrid\_t} 联合体中解析出本次门铃中包含的 WR 数量，从而释放已占用的 WR 进行重用，
-其次如果 \texttt{request\_finished} 为真标志着请求的最后一个分片已经发送完成，
-从 \texttt{pending\_local\_send\_event\_map\_} 中取出对应 \texttt{Event}
-并调用 \texttt{notify()} 告知上层应用发送完成。
+每个成功的工作完成（work completion）都带有一个 64 位工作请求标识符（wr id），
+需要对其解码，图 ~\ref{fig:wrid-encoding} 展示了编码格式。
+该标识符由三部分组成：低 32 位为逻辑通道标识符 \texttt{unique\_id}，中间 16 位 \texttt{length} 为批处理提交的 WR 数量，
+\texttt{finished} 标志占据 1 位，指示该 WR 是否为某个请求的最后一个分片。
+
+首先解析出本次门铃中包含的 WR 数量，从而释放已占用的 WR 进行重用；
+其次如果 \texttt{finished} 位为真，表示逻辑通道标识符为 \texttt{unique\_id} 的请求的最后一个分片已经发送完成，
+从 \texttt{pending\_local\_send\_event\_map\_} 中取出对应事件并调用
+\texttt{notify()} 告知上层应用发送完成。
 这样，应用层看到的发送完成语义始终对应于“整个请求的最后一个分片发送完成”，有效简化了上层使用难度。
 
-\begin{lstlisting}[language=C++,caption={wrid\_t union},label=lst:rdma-wrid-t]
-union wrid_t {
-    struct {
-        uint16_t padding_ : 15;
-        bool request_finished : 1;
-        uint16_t doorbell_length : 16;
-        uint32_t unique_id : 32;
-    } wr_id;
-    uint64_t value;
-};
-\end{lstlisting}
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.6\linewidth]{figures/wrid_encoding.png}
+    \caption{工作请求标识符编码示意图}
+    \label{fig:wrid-encoding}
+\end{figure}
 
-% \begin{lstlisting}[language=C++,caption={Handle completions},label=lst:rdma-handle-completions]
-% void RdmaSender::handle_completions() {
-%     this->qp_->poll_send_cq_once(kMagic, this->polled_send_wcs_);
-%     for (const auto& wc : this->polled_send_wcs_) {
-%         CHECK_STATUS(/* ... */);
-%         wrid_t wr_id {.value = wc.wr_id};
-%         uint16_t doorbell_length = wr_id.wr_id.doorbell_length;
-%         bool request_finished = wr_id.wr_id.request_finished;
-%         uint32_t id = wr_id.wr_id.unique_id;
-%         this->wr_occupied_ -= doorbell_length;
-%         if (request_finished) {
-%             this->pending_local_send_event_map_[id].front()
-%                 ->notify();
-%             this->pending_local_send_event_map_[id].pop();
-%         }
-%     }
-% }
-% \end{lstlisting}
+\paragraph{\texttt{RdmaRecver::poll()}} 接收端 \texttt{poll()} 的运行逻辑与发送端对称，
+其核心目标是在控制面与数据面之间推进接收路径的状态机。
+该过程可分为三个阶段，对应算法~\ref{alg:rdma-recver-poll} 所示的批量命令提取、接收缓冲区发布以及完成事件处理。
 
-\paragraph{RdmaRecver::poll()} 接收端 \texttt{poll()} 的运行逻辑与发送端对称，
-其核心目标是在控制面与数据面之间持续推进接收路径的状态机。
-在结构上，该过程可分为三个相互衔接的阶段，对应算法~\ref{alg:rdma-recver-poll} 所示的批量命令提取、接收缓冲区发布以及完成事件处理。
-
-首先算法会尝试从应用层无锁命令队列中批量获取最多 \texttt{kMagic} 条用户接收请求。
-依据算法开端的步骤，每条命令均携带一个 \texttt{RdmaTicket} 以及其关联的 \texttt{Event}。
-执行器将票据按到达顺序插入全局 FIFO，用于后续 WR 槽位的顺序消耗；
-同时按照 \texttt{unique\_id} 将命令插入分组映射 \texttt{pending\_local\_recv\_request\_map\_}，
+首先算法会尝试从并发队列中批量获取最多 \texttt{kMagic} 条命令，
+每条命令均携带一个 \texttt{RdmaTicket} 以及其关联的 \texttt{Event}。
+执行器将这个 ticket 按到达顺序插入待处理队列，用于后续 WR 槽位的顺序消耗；
+同时按照逻辑通道标识符 \texttt{unique\_id}
+将命令插入分组映射 \texttt{pending\_local\_recv\_request\_map\_}，
 从而在后续根据立即数索引特定命令时能够实现常数时间的查找。此阶段的设计使接收端能够以批处理方式处理上层请求，
 从而降低队列同步开销并提高流水线推进效率。
 
 然后根据 WR 槽位资源的情况进行请求发送和信号接收，
-只要存在空闲的 WR 槽位并且仍有待处理票据，\texttt{poll()} 就按照算法中的逻辑进行驱动。
-在每次迭代中，执行器从 FIFO 中取出一条票据，将其序列化写入控制面发送缓冲区，并在同一个 \texttt{wr\_id} 上发布一对 WR：
-其一为 \texttt{RECV}，用于接收随后的 \texttt{RDMA\_WRITE\_WITH\_IMM} 数据；
-其二为 \texttt{SEND}，在接收端驱动的 RDMA 链路执行器中，用于将该票据作为控制面消息发送给发送端。
+只要存在空闲的 WR 槽位并且仍有待处理票据，算法就会进行如下操作：
+\begin{enumerate}
+    \item 从待处理队列中取出一条 ticket，将其序列化写入控制面发送缓冲区；
+    \item 获取一个空闲的工作请求槽位；
+    \item 在空闲槽位发布接收工作请求（Recv WR），用于接收发送端 RDMA Write with Imm 操作的立即数数据；
+    \item 在空闲槽位发布发送工作请求（Send WR），将该 ticket 作为控制面消息发送给发送端。
+\end{enumerate}
 通过同时发布这两类 WR，接收端能够在数据面尚未到达之前，就准备好控制面信号缓冲区。
 
-最后，\texttt{poll()} 通过完成队列的轮询推进状态转换。依据算法后半段的逻辑，
-接收端首先检查所有控制面 \texttt{SEND} 操作是否已成功完成，确保控制消息已可靠送达；
-随后从接收 CQ 中提取最多 \texttt{kMagic} 条 \texttt{IBV\_WC\_RECV\_RDMA\_WITH\_IMM} 类型的事件。
-每条事件都携带发送端写入的立即数，因此执行器能够直接根据该值在 \texttt{pending\_local\_recv\_request\_map\_} 中检索对应的命令队列，并从中弹出队首命令。
+最后算法通过完成队列的轮询推进状态转换：
+接收端首先检查所有控制面发送操作是否已成功完成，确保控制消息已被发送端收到；
+随后从接收队列中批量获取 RDMA Write with Imm 类型的完成事件，每条事件都携带发送端写入的立即数，
+因此执行器能够直接根据该值在 \texttt{pending\_local\_recv\_request\_map\_} 中检索对应的命令队列，并从中弹出队首命令。
 随着 WR 槽位被回收至 \texttt{free\_slots}，一次接收操作完成。
 
 完成语义的触发则取决于是否启用了 \texttt{RdmaFlusher}。
-若未启用，\texttt{poll()} 会立即对命令携带的事件执行 \texttt{notify()}，将接收完成同步上报给应用层；
-若启用了 \texttt{flusher}，则按照算法中的分支逻辑，将 RDMA 写入的地址与键值交由其处理，
-以通过额外的 RDMA READ 操作确保 GPU Direct RDMA 的可见性。
+若未启用，算法会立即对完成的请求携带的事件执行 \texttt{notify()}，将命令完成同步给应用层；
+若启用了 \texttt{RdmaFlusher}，则将 RDMA 写入的地址与键值交由其处理，
+以通过额外的 RDMA Read 操作确保 GPU Direct RDMA 的可见性。
 通过将“网络写完成”与“GPU 可见”两个语义显式解耦，该设计使接收端能够在不同硬件环境中保持一致的控制面行为，
 同时在具备 GPU 设备内存的场景下提供强一致的数据可见性保障。
 
-综上所述，\texttt{RdmaRecver::poll()} 在严格遵循算法~\ref{alg:rdma-recver-poll} 的基础上，
-通过批量处理命令、协调控制面发布以及分阶段处理完成事件，实现了高效、稳健且可扩展的 RDMA 接收路径推进机制。
+综上所述，\texttt{RdmaRecver::poll()}，通过批量处理命令、协调控制面发布以及分阶段处理完成事件，
+实现了高效、稳健且可扩展的 RDMA 接收路径推进机制。
 
 \begin{algorithm}[t]
-    \caption{RDMA receiver polling and ticket publishing (simplified)}
+    \caption{RdmaRecver 轮询算法}
     \label{alg:rdma-recver-poll}
     \KwIn{
         lock-free command queue $\mathit{CmdQueue}$ carrying \texttt{RdmaCommand};
@@ -566,8 +623,8 @@ union wrid_t {
 
     \BlankLine
     \While{$\mathit{FreeSlots}$ not empty \textbf{and} $\mathit{PendingFIFO}$ not empty}{
-        $wr\_id \gets \mathit{FreeSlots}.\text{pop\_front}()$ \;
         $ticket \gets \mathit{PendingFIFO}.\text{pop\_front}()$ \;
+        $wr\_id \gets \mathit{FreeSlots}.\text{pop\_front}()$ \;
         \texttt{qp.post\_recv}$(wr\_id,\ \text{recv\_buffer\_slot}(wr\_id))$ \;
         \texttt{qp.post\_send\_send}$(wr\_id,\ \text{send\_buffer\_slot}(wr\_id))$ \;
     }
@@ -595,113 +652,140 @@ union wrid_t {
 \section{NVLink 链路执行器实现}
 
 与前文的 RDMA 链路不同，同一节点内部通过 NVLink 连接的多 GPU 之间不存在网卡、QP 与 Completion Queue 等传统 RDMA 抽象，
-\sysname 在该场景下将数据面下沉到 GPU copy engine，由后台拷贝线程统一调度，控制面则通过进程间共享内存传递轻量级命令。
-executor\_nvlink 模块由发送端 \texttt{NvlinkSender}、接收端 \texttt{NvlinkRecver} 以及绑定到目标 GPU 的 \texttt{NvlinkCopyExecutor} \todo{rename to NvlinkCopier} 共同构成，
+\sysname 在该场景下将数据面下沉到 GPU Copy Engine，由后台拷贝线程统一调度，
+控制面则通过进程间共享内存实现单生产者单消费者队列传递轻量控制面元数据。
+executor\_nvlink 模块由发送端 \texttt{NvlinkSender}、接收端 \texttt{NvlinkRecver}
+以及绑定到目标 GPU 的拷贝线程 \texttt{NvlinkCopier} 共同构成，
 整体仍然遵循统一的 \texttt{send()} / \texttt{recv()} 接口与事件通知语义。
+图 ~\ref{fig:nvlink-executor} 展示了 NVLink 链路执行器的核心类结构与成员变量。
 
-\subsection{CUDA IPC 控制面的实现}
+\begin{figure}[htbp]
+    \centering
+    \begin{minted}[
+        frame=lines,
+        linenos,
+        fontsize=\small,
+        numbersep=10pt,
+        framesep=3mm
+    ]{cpp}
+class NvlinkSender : public Sender, public Pollable {
+// ...
+private:
+  ipc::SPSCQueue<NvlinkSendTicket> send_ticket_queue_;
+  ipc::SPSCQueue<NvlinkAck> recv_ack_queue_;
+  HandleCache handle_cache_;
+  MultiMap<shared_ptr<Event>> pending_send_event_map_;
+  shared_ptr<Event> inner_send(uint32_t unique_id, uint64_t offset,
+                               uint64_t length,
+                               cudaIpcMemHandle_t handle);
+public:
+  shared_ptr<Event> send(uint32_t unique_id, uint64_t addr,
+                         uint64_t length) override {
+    return this->inner_send(/*...*/);
+  }
+  void poll() override noexcept;
+};
 
-NVLink 链路控制面围绕 CUDA IPC 提供的数据指针共享机制构建。发送方在应用层调用 \texttt{send()} 时，
+class NvlinkRecver : public Recver, public Pollable {
+// ...
+private:
+  ipc::SPSCQueue<NvlinkSendTicket> recv_ticket_queue_;
+  ipc::SPSCQueue<NvlinkAck> send_ack_queue_;
+  Queue<NvlinkRecvCommand> recv_request_command_queue_;
+  MultiMap<NvlinkSendTicket> pending_remote_send_map_;
+  MultiMap<NvlinkRecvCommand> pending_local_recv_map_;
+  Queue<NvlinkCopyTask> copy_task_queue_;
+  NvlinkCopier copier_;
+};
+    \end{minted}
+    \caption{NVLink 链路执行器}
+    \label{fig:nvlink-executor}
+\end{figure}
+
+\subsection{共享内存单生产者单消费者队列}
+
+NVLink 链路围绕 CUDA IPC 提供的跨进程访问和 Peer Access功能构建。
+发送方在应用层调用 \texttt{send()} 时，
 通过 \texttt{cudaIpcGetMemHandle()} 将本地 GPU 缓冲区封装为 \texttt{cudaIpcMemHandle\_t} 并传给接收方；
 接收方在拿到该 handle 之后，首先调用 \texttt{cudaIpcOpenMemHandle()}
-将发送端内存映射到本进程的地址空间获取可以在进程内部直接访问的指针，然后就可以在单进程内部完成 GPU-to-GPU 的内存拷贝了。
+将发送端内存映射到本进程的地址空间获取可以在进程内部直接访问的指针，
+然后就可以在单进程内部完成 GPU-to-GPU 的内存拷贝了。
 
-executor\_nvlink 中定义了面向多进程控制面元数据交换的轻量级 POD （Plain of Data） 数据结构
-\texttt{NvlinkSendTicket} 与 \texttt{NvlinkAck}，
-满足 \texttt{ipc::SPSCQueue} 对元素类型的约束，以在多进程环境中传输：
+然而与 RDMA 场景中基于 \texttt{RcQueuePair} 进行控制面消息传递不同，
+NVLink 控制面依赖共享内存单生产者单消费者队列，
+用于在单节点内的多个进程之间传递 \texttt{NvlinkSendTicket} 与 \texttt{NvlinkSendTicket}，
+其具体定义如图 ~\ref{fig:nvlink-control-plane-structure} 所示。
 
-\begin{lstlisting}[language=C++,caption={NVLink 控制面核心数据结构},label=lst:nvlink-control]
+在 \texttt{NvlinkSender} 中，\texttt{send\_ticket\_queue\_} 用作
+发送端到接收端的单向控制面消息通道，
+而 \texttt{recv\_ack\_queue\_} 则用于获取接收端回传的 \texttt{NvlinkAck}。
+\texttt{NvlinkRecver} 中的成员则恰好承担反向角色。
+
+由于局部指针跨进程传递无法直接解引用，SPSCQueue 要求元素为 POD 类型，控制面结构体不包含任何指针或复杂资源；
+涉及 \texttt{std::shared\_ptr<Event>} 的 \texttt{NvlinkCopyTask} 仅在进程局部队列中流转，
+不会经由共享内存 SPSC 队列跨进程传递，从而避免了跨进程管理 C++ 对象生命周期的复杂性。
+
+\begin{figure}[htbp]
+    \centering
+    \begin{minted}[
+        frame=lines,
+        linenos,
+        fontsize=\small,
+        numbersep=10pt,
+        framesep=3mm
+    ]{cpp}
 struct alignas(64) NvlinkSendTicket {
-    cudaIpcMemHandle_t handle;
-    uint64_t offset;
-    uint32_t unique_id;
-    uint32_t length;
+  cudaIpcMemHandle_t handle;
+  uint64_t offset;
+  uint32_t unique_id;
+  uint64_t length;
 };
 
 struct alignas(8) NvlinkAck {
-    uint32_t unique_id;
+  uint32_t unique_id;
 };
-\end{lstlisting}
+    \end{minted}
+    \caption{NVLink 链路执行器控制面元数据}
+    \label{fig:nvlink-control-plane-structure}
+\end{figure}
 
-发送方与接收方之间的控制面协议可以概括为：
+\subsection{请求匹配与提交}
 
-\begin{itemize}
-    \item Sender 在 \texttt{send()} 中构造 \texttt{NvlinkSendTicket}，通过跨进程 SPSC 队列发送到接收方；
-    \item Receiver 在 \texttt{poll()} 中从 SPSC 队列中取回 \texttt{NvlinkSendTicket}，
-          进行请求匹配后向本地的 \texttt{NvlinkCopyExecutor} 提交拷贝任务进行后台执行；
-    \item CopyExecutor 在拷贝完成后，通过另一条 SPSC 队列发送 \texttt{NvlinkAck} 给 Sender
-          以唤醒对应的 \texttt{Event}。
-\end{itemize}
+NVLink 执行器的请求的匹配与调度逻辑与 RDMA 链路的类似，同样采用 ``远端发送请求 + 本地接收请求'' 的双队列配对模式。
+不同之处在于，NVLink 执行器采用``发送端发起''的模式，而请求匹配和调度的逻辑主要集中在接收端，
 
-\subsubsection{进程间共享内存 SPSC 队列}
+发送端首先调用 \texttt{send()} 发起通信请求，从本地缓存查找可用的 CUDA IPC Mem Handle，
+如果不存在，则根据配置情况决定是否调用 \texttt{cudaIpcGetMemHandle()} 创建新的 handle 并缓存。
+获取到 handle 之后，将相对 CUDA IPC Mem Handle 的起始地址偏移量、
+长度以及逻辑通道标识符 \texttt{unique\_id} 打包为 \texttt{NvlinkSendTicket}，写入跨进程 SPSC 队列；
+同时在 \texttt{pending\_send\_event\_map\_} 中插入一条待完成的 \texttt{Event}。
 
-与 RDMA 场景中基于 \texttt{RcQueuePair} 进行控制面消息传递不同，
-NVLink 控制面依赖 \texttt{ipc::SPSCQueue} 实现单生产者单消费者队列，用于在单节点内的多个进程之间传递 ticket 与 ACK。
+在接收端，\texttt{NvlinkRecver::poll()} 负责从对应的 SPSC 队列中取出 ticket 并进行匹配，
+其流程如下：
+\begin{enumerate}
+    \item 从跨进程 SPSC 队列中取出远端 \texttt{NvlinkSendTicket}，
+          按 \texttt{unique\_id} 插入 \texttt{pending\_remote\_send\_map\_}；
+    \item 从本地 \texttt{recv\_request\_command\_queue\_} 中出队 \texttt{NvlinkRecvCommand}，
+          按 \texttt{unique\_id} 插入 \texttt{pending\_local\_recv\_map\_}；
+    \item 在上述两个映射上做配对，将匹配成功的二元组组装为 \texttt{NvlinkCopyTask}，
+          放入 \texttt{copy\_task\_queue\_}，等待拷贝线程执行。
+\end{enumerate}
 
-在 \texttt{NvlinkSender} 中，\texttt{send\_ticket\_queue\_} 用作
-``Sender $\rightarrow$ Receiver'' 的单向控制面信道，
-而 \texttt{recv\_ack\_queue\_} 则用于从 Receiver 侧回传 \texttt{NvlinkAck}。
-\texttt{NvlinkRecver} 中的成员则恰好承担反向角色。
+在这一设计下 NVLink 接收端的控制面完全工作在 CPU 上，而所有 GPU 数据面操作则推迟到 Copier 的线程中执行。
+事件语义与 RDMA 链路保持对齐，应用层始终在发送或接收请求对应的 \texttt{Event} 上等待，直到跨 GPU 内存拷贝完成后才被通知。
 
-由于 SPSCQueue 要求元素类型为 trivially copyable，控制面结构体中不包含任何指针或复杂资源；
-涉及 \texttt{std::shared\_ptr<Event>} 的 \texttt{NvlinkCopyTask} 仅在进程本地的 \texttt{Queue} 中流转，
-不会经由 IPC 队列跨进程传递，从而避免了跨进程管理 C++ 对象生命周期的复杂性。
+\subsection{数据面的实现}
 
-\subsubsection{cudaIpcMemHandle 的管理}
+\subsubsection{拷贝线程执行流程}
 
-在应用调用 \texttt{send()} 时，\texttt{NvlinkSender} 只封装并转发已经准备好的 CUDA IPC handle，
-而不直接参与 handle 的创建和生命周期管理。其典型调用流程为：
+接收端链路执行器持有 \texttt{copy\_task\_queue\_} 的一端，并持续向其中注入拷贝任务；
+拷贝线程从另一端取出拷贝任务并执行。
 
-\texttt{send()} 将 \texttt{unique\_id}、\texttt{cudaIpcMemHandle\_t}、
-相对于这个 CUDA IPC handle起始地址的偏移量、以及拷贝长度打包为 \texttt{NvlinkSendTicket}，写入跨进程 SPSC 队列；
-同时在 \texttt{pending\_send\_event\_map\_} 中登记一条待完成的 \texttt{Event}。
-在另一端，\texttt{NvlinkRecver::poll()} 负责从对应的 SPSC 队列中取出 ticket 并进行匹配，
-无须再与 Sender 进行额外的交互。
-
-\todo{为什么传 offset 而不是 address}
-
-对于 CUDA IPC handle 的具体复用策略（例如是否跨多次发送共用同一 handle），
-\sysname 在接口层面保持透明，应用可以根据使用模式在更上层进行缓存或管理，而执行器内部只要求在任务执行期间 handle 有效即可。
-
-\begin{lstlisting}[language=C++,caption={NvlinkSender 接口与内部状态},label=lst:nvlink-sender]
-class NvlinkSender {
-private:
-    int device_;
-    ipc::SPSCQueue<NvlinkSendTicket> send_ticket_queue_;
-    ipc::SPSCQueue<NvlinkAck>        recv_ack_queue_;
-    map<uint32_t, shared_ptr<Event>> pending_send_event_map_;
-public:
-    shared_ptr<Event> send(uint32_t unique_id, uint64_t offset,
-        uint32_t length, cudaIpcMemHandle_t handle);
-    void poll() noexcept;
-    // ...
-};
-
-class NvlinkRecver {
-private:
-    int device_;
-    ipc::SPSCQueue<NvlinkSendTicket> recv_ticket_queue_;
-    ipc::SPSCQueue<NvlinkAck>        send_ack_queue_;
-
-    Queue<NvlinkRecvCommand>     recv_request_command_queue_;
-    MultiMap<NvlinkSendTicket>   pending_remote_send_map_;
-    MultiMap<NvlinkRecvCommand>  pending_local_recv_map_;
-
-    Queue<NvlinkCopyTask>  copy_task_queue_;
-    NvlinkCopyExecutor     copy_executor_;
-    // ...
-};
-\end{lstlisting}
-
-\subsection{CUDA IPC 数据面的实现}
-
-\subsubsection{NvlinkCopyExecutor 执行流程}
-
-GPU 指针的跨进程可见性由 \texttt{NvlinkCopyExecutor} 在后台统一管理，在创建 CopyExecutor 对象时，
-构造函数在指定的 \texttt{device} 上创建 CUDA primary context，并初始化一个专用的非阻塞 \texttt{cudaStream\_t}；
-随后启动后台工作线程，其运行 Infinite loop，
-不断从 \texttt{copy\_task\_queue\_} 中取出 \texttt{NvlinkCopyTask} 并执行 GPU-to-GPU 拷贝。
-其处理单个任务时的典型操作顺序为：
+GPU 指针的跨进程可见性由 \texttt{NvlinkCopier} 管理，在创建 Copier 对象时，
+构造函数在指定的 \texttt{device} 上创建 CUDA primary context，
+并初始化一个专用的非阻塞 \texttt{cudaStream\_t}；
+随后启动后台工作线程运行无限循环，循环的每一轮都尝试获取拷贝任务，并执行 GPU-to-GPU 拷贝。
+其处理单个任务时流程如下：
 
 \begin{enumerate}
     \item 调用 \texttt{cudaSetDevice(device\_)}，确保当前线程绑定到目标 GPU 的上下文；
@@ -714,36 +798,44 @@ GPU 指针的跨进程可见性由 \texttt{NvlinkCopyExecutor} 在后台统一�
     \item 调用 \texttt{cudaIpcCloseMemHandle()} 关闭远端指针映射。
 \end{enumerate}
 
-通过将 CUDA IPC handle 的管理逻辑集中在 CopyExecutor 内部，\sysname 将跨进程 GPU 指针管理复杂度屏蔽，
+通过将 CUDA IPC handle 的管理逻辑集中在 Copier 内部，\sysname 将跨进程 GPU 指针管理复杂度屏蔽，
 保证了 handle 生命周期与数据传输严格绑定。
 
-\subsubsection{NvlinkCopyExecutor 优化}
+\subsubsection{CUDA IPC Memory Handle 性能优化}
 
-cudaIpcOpenMemHandle 的开销 \todo{优化}
-
-\subsection{匹配与调度机制}
-
-NVLink 执行器的请求的匹配与调度逻辑与 RDMA 链路的类似，同样采用 ``远端发送请求 + 本地接收请求'' 的双队列配对模式。
-不同之处在于，NVLink 执行器采用``发送端发起''的模式，而请求匹配和调度的逻辑主要集中在接收端，
-匹配成功的请求会生成 \texttt{NvlinkCopyTask} 交由接收端本地 CopyExecutor 执行。
-以下是接收端 \texttt{NvlinkRecver::poll()} 的整体流程：
-
+\paragraph{性能开销分析}
+从操作系统层面看，\texttt{cudaIpcOpenMemHandle()} 并非简单的“反序列化指针”，
+其主要开销来自于跨进程设备内存映射的建立过程：
+运行时需要将发送端导出的设备内存对象引入到接收端进程的 CUDA context 中，
+并为该内存建立可被本进程访问的虚拟地址映射关系。这一过程通常涉及：
 \begin{enumerate}
-    \item 从跨进程 SPSC 队列中取出远端 \texttt{NvlinkSendTicket}，
-          按 \texttt{unique\_id} 插入 \texttt{pending\_remote\_send\_map\_}；
-    \item 从本地 \texttt{recv\_request\_command\_queue\_} 中出队 \texttt{NvlinkRecvCommand}，
-          按 \texttt{unique\_id} 插入 \texttt{pending\_local\_recv\_map\_}；
-    \item 在上述两个映射上做配对，将匹配成功的二元组组装为 \texttt{NvlinkCopyTask}，
-          放入 \texttt{copy\_task\_queue\_}。
+    \item CUDA context 内部全局锁与元数据查找；
+    \item 为映射区间创建或更新 GPU 虚拟地址空间与页表项；
+    \item 按需启用 Peer Access；
+    \item 映射/解除映射阶段可能触发的同步语义与资源回收。
 \end{enumerate}
+相对而言，\texttt{cudaMemcpyAsync()} 的开销主要与数据量相关，
+而打开/关闭的固定成本更高，因此在小消息场景下尤为显著。
 
-在这一设计下 NVLink 接收端的控制面完全工作在 CPU 上，而所有 GPU 数据面操作则推迟到 CopyExecutor 的线程中执行。
-事件语义与 RDMA 链路保持对齐，应用层始终在发送或接收请求对应的 \texttt{Event} 上等待，直到跨 GPU 内存拷贝完成后才被通知。
+如图 ~\ref{fig:cuda-ipc-overhead} 所示，打开/关闭 CUDA IPC Handle 的延迟极高，
+并且随着被映射内存区域增大呈上升趋势：当映射的 buffer 足够大时，单次打开/关闭甚至达到毫秒级，
+这会直接限制 \sysname 在 NVLink 数据面的端到端吞吐，造成显著的 GPU 地址空间管理压力。
 
-% \section{工程优化}
-% \subsection{RAII 资源管理}
-% \subsection{错误传播与 Result 封装}
-% \subsection{与 Python/上层推理框架的集成}
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\linewidth]{figures/cuda_ipc_open_close_overhead_vs_size.png}
+    \caption{CUDA IPC Open/Close 开销}
+    \label{fig:cuda-ipc-overhead}
+\end{figure}
 
-\section{小结}
+\paragraph{缓存复用的优化思路}
+针对上述瓶颈，\sysname 在数据面引入IPC 映射缓存：
+对于同一个发送端导出的 \texttt{cudaIpcMemHandle\_t}，接收端不再在每个任务中重复打开/关闭，
+而是在首次遇到该 handle 时执行一次 \texttt{cudaIpcOpenMemHandle()}，
+将得到的远程内存基地址缓存起来，后续所有属于该 buffer 的拷贝任务直接复用该映射指针；
+后续发送端如果不再使用该内存区域，则通过控制面通知接收端关闭该 handle 并从缓存中移除。
+这样可以将打开/关闭的摊销成本从“每次拷贝一次”降低为“每个 buffer 生命周期一次”，
+从而显著提升性能。
+
+\section{本章小结}
 

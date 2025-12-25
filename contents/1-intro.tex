@@ -67,17 +67,17 @@ NCCL 针对 NVIDIA GPU 架构进行了深度优化，充分利用 GPU 之间的�
 作为主流深度学习框架（如 PyTorch 和 TensorFlow）的底层通信模块，NCCL 已成为 GPU 集群环境中高性能集合通信的事实标准，
 在大规模模型训练、推理场景中发挥着关键作用。
 
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\linewidth]{figures/nccl_rdma.png}
+    \caption{NCCL 跨节点 RDMA 通信示意图}
+    \label{fig:nccl-rdma-proxy-thread}
+\end{figure}
+
 然而 NCCL 在进行跨节点 RDMA 通信时，采用代理线程模式，由 CPU 和 GPU 共享信号缓冲区（Signal buffer），
 在 CPU 上启动网卡轮询线程监测通信任务执行情况，并将结果写会信号缓冲区，然后 GPU 端通过轮询信号缓冲区获取通信任务执行结果，
 从而进行网卡-CPU-GPU的跨设备同步。这种代理线程、多级轮询、跨设备同步的设计，
 导致 NCCL 在进行跨节点通信时引入额外延迟，不能应对延迟敏感场景工作负载的需求。
-
-\begin{figure}[h]
-    \centering
-    \includegraphics[width=0.75\linewidth]{figures/nccl_rdma.png}
-    \caption{NCCL 跨节点 RDMA 通信示意图}
-    \label{fig:nccl-rdma-proxy-thread}
-\end{figure}
 
 NCCL 在进行节点内通过 NVLink 的多 GPU 通信时，启动大量 GPU 线程进行 Load/Store 操作，消耗 SM 资源，
 会和计算任务产生资源竞争，影响计算效率。
@@ -96,7 +96,7 @@ NCCL 在进行节点内通过 NVLink 的多 GPU 通信时，启动大量 GPU 线
 %
 \begin{figure}[h]
     \centering
-    \includegraphics[width=0.75\linewidth]{figures/nccl_nvlink.png}
+    \includegraphics[width=0.8\linewidth]{figures/nccl_nvlink.png}
     \caption{NCCL 节点内 NVLink 通信示意图}
     \label{fig:nccl-nvlink}
 \end{figure}

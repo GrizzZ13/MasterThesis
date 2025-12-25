@@ -2,27 +2,29 @@
 
 \chapter{\sysname 系统架构与设计}
 
-本章将介绍 \sysname 的整体设计理念、系统结构以及核心组件的工作方式。
+本章将介绍 \sysname 的整体设计理念、系统架构以及核心组件的工作方式。
 为了应对大模型推理过程中点对点通信效率不足的问题，
 \sysname 在系统设计上充分利用 GPU 集群的横向 RDMA 网络与纵向 NVLink 高速互联，
-构建了一个在不占用 GPU 计算核心的前提下，支持高带宽、低时延传输的通信库。
+构建了一个在不占用 GPU 计算资源流式多处理器的前提下，支持高带宽、低时延传输的通信库。
 
 \section{设计目标}
 
 \sysname 是面向大模型推理场景设计的高性能通信库，其目标是在推理过程中提供高效、稳定、可扩展的节点间数据传输能力。
 与传统的 GPU 通信方式相比，\sysname 采用控制面完全卸载（fully control-plane offloading）的方式，
-将通信调度工作交由 CPU 侧的运行时线程池处理，避免占用 GPU 计算资源，使得推理任务能够最大化地利用 GPU 的算力。
+将通信的发起以及调度工作交由 CPU 线程执行，避免占用 GPU 计算资源，使得推理任务能够最大化地利用 GPU 的算力。
 \sysname 的设计主要具有以下特点：
 
 \begin{itemize}
-    \item 异构多链路支持。 \sysname 采用统一的双向通信接口抽象，
-          用户侧仅需通过 \texttt{send()} 与 \texttt{recv()} 两个接口即可完成通信调用。
-          系统内部能够根据硬件环境自动选择使用 GPU Direct RDMA 或 NVLink 作为底层链路，
-          从而在不同网络拓扑下提供统一的编程接口，屏蔽底层差异性简化开发复杂度。
-    \item 良好的可扩展性。 \sysname 采用分层化架构，上层接口稳定，底层链路可插拔。
-          GPU Direct RDMA 和 NVLink 的实现遵循同一调度和接口语义，通过替换链路执行器即可无缝接入更多未来通信方式。
-    \item 安全性与高可靠性。系统基于现代 C++ 与 RAII 原则实现，自动管理资源生命周期，减少手动管理带来的风险。
-          为了在高并发场景下保持性能，系统内部广泛采用无锁队列与细粒度的并发控制机制，确保在高负载下仍能保持正确性与稳定性。
+      \item 异构多链路支持。 \sysname 采用统一的双向通信接口抽象，
+            用户侧仅需通过 \texttt{send()} 与 \texttt{recv()} 两个接口即可完成通信调用。
+            系统内部能够根据硬件环境自动选择使用 GPU Direct RDMA 或 NVLink 作为底层链路，
+            从而在不同网络拓扑下提供统一的编程接口，屏蔽底层差异性、简化开发复杂度。
+      \item 良好的可扩展性。 \sysname 采用分层化架构，上层应用接口稳定，底层链路可灵活扩展以及替换。
+            GPU Direct RDMA 和 NVLink 链路的实现遵循统一调度接口和双向通信抽象，并通过良好抽象支持未来更多链路的无缝接入。
+      \item 基于现代 C++ 实现，保证安全性与高可靠性。
+            贯彻现代 C++ 的 RAII 原则自动管理资源生命周期，减少手动管理带来的风险。
+            为了在高并发场景下保持性能，系统内部广泛采用无锁队列与细粒度的并发控制机制，
+            确保在高负载下仍能保持正确性与稳定性。
 \end{itemize}
 
 \section{系统概述}
@@ -32,29 +34,27 @@
 分层设计的核心目标在于实现接口与硬件的彻底解耦，使系统能够适配不同的互联技术，并在负载规模扩大时仍保持通信性能的稳定。
 
 \begin{figure}[h]
-    \centering
-    \includegraphics[width=0.85\linewidth]{figures/system_arch.png}
-    \caption{\sysname 系统整体架构}
-    \label{fig:sys-arch}
+      \centering
+      \includegraphics[width=1.0\linewidth]{figures/system_arch_v2.png}
+      \caption{\sysname 系统整体架构}
+      \label{fig:sys-arch}
 \end{figure}
 
 \paragraph{应用接口层}
-作为 \sysname 面向用户的最高层抽象，应用接口层提供统一且轻量的通信接口，使用户无需关注底层硬件差异即可提交数据传输请求。
+作为 \sysname 面向用户的最高层抽象，应用接口层提供统一的双向通信接口，使用户无需关注底层硬件差异即可提交数据传输请求。
 无论底层链路采用 RDMA、NVLink 或其他互联方式，用户均通过 SEND 和 RECV 的接口进行通信。
 该层将用户的调用封装为通信任务并提交至系统内部，通过统一调度、执行框架统一承载，屏蔽异构链路带来的差异性。
 并且系统通过事件（Event）机制提供异步通信模型，用户在发起请求后能够立即返回并根据需要查询或等待传输状态，提升整体通信并发性。
 
 \paragraph{链路执行层}
-链路执行层封装了不同类型通信链路的核心逻辑，是系统连接抽象接口与底层硬件的关键支撑。
-各不同的链路执行模块遵循一致的接口规范，对上提供安全且无损的发送与接收功能，对下由运行时驱动其调度行为。
-通过可插拔式的设计，\sysname 能够在底层互联技术演进时自然扩展，无需修改上层接口语义或调度流程。
-该层重新组织了不同链路的控制流程，使数据传输的发起、推进与完成均由统一抽象承载，从而提升系统兼容性与拓展性。
+链路执行层封装了不同类型通信链路的核心逻辑，负责将应用接口层提交的抽象通信请求映射为具体的底层数据搬运操作。
+各不同的链路执行模块遵循一致的接口规范，对上提供数据发送与接收功能，对下由运行时驱动其调度行为。
+通过可插拔式的设计，\sysname 能够在底层互联技术演进时自然扩展，无需修改上层接口语义，从而提升系统兼容性与拓展性。
 
 \paragraph{运行时}
-运行时承载系统的核心控制面逻辑，负责维护通信任务生命周期，并驱动链路执行层完成实际的数据搬运。
-其采用 CPU 线程池执行调度与轮询逻辑，实现了通信控制面的完全卸载，从而避免占用 GPU 计算资源。
-运行时主要功能包括任务入队与匹配、跨链路的调度与推进、链路状态的持续监控以及事件完成通知等。
-后台线程通过链路执行层提供的轮询机制持续推进任务状态，使通信过程对用户透明并保持高并发场景下的稳定性能。
+运行时承载系统的核心控制面行为，驱动链路执行层完成实际的数据搬运。
+其采用 CPU 线程池进行轮询，实现了通信控制面的完全卸载，从而避免占用 GPU 计算资源。
+后台线程通过链路执行层提供的统一轮询接口持续推进任务状态，使通信过程对用户透明并保持高并发场景下的稳定性能。
 
 \paragraph{设计总结}
 通过分层化的架构，\sysname 在接口抽象、链路实现与调度控制之间形成了明确的边界。
@@ -68,20 +68,20 @@
 以及在高并发推理场景中具备良好的可扩展性与异步处理能力。
 
 \sysname 将通信操作统一抽象为 SEND 与 RECV 两类基本操作。
-每一次操作均对应一个独立的通信任务，系统在接口层对其语义作出一致性保证，
-包括：通信形式的双向对称性、用户侧对底层链路的透明性、通信过程不依赖 GPU 计算资源，以及传输完成后由统一的事件机制进行通知。
+每一次操作均对应一个独立的通信任务，系统在接口层对其语义作出一致性保证，包括：
+通信形式的双向对称性、用户侧对底层链路的透明性、通信过程不依赖 GPU 计算资源，以及传输完成后由统一的事件机制进行通知。
 
 在提交通信任务时，用户需要为每个任务分配一个唯一标识符，用于表达该任务所属的逻辑通道。
 该标识符与底层的物理通信通道相互独立：
 物理通道是由实际硬件链路（如 RDMA、NVLink 等）所定义的固定资源，
 而逻辑通道作为软件抽象，用于在同一物理通道之上区分不同的数据流，可以灵活定义并根据应用需求动态创建。
-通过唯一标识符，系统能够在单一物理链路上区分多条并行的逻辑通信路径，从而实现多路复用（multiplexing）。
-这一机制既提升了物理链路的利用率，又避免了因硬件接口数量受限而产生的扩展瓶颈。
+通过唯一标识符，系统能够在单一物理链路上区分多条并行的逻辑通信路径，从而实现多路复用（Multiplexing）。
+这一设计既提升了物理链路的利用率，又避免了因硬件接口数量受限而产生的扩展瓶颈。
 
 唯一标识符同时也是任务调度的基本单元，使系统能够在逻辑通道粒度上表达任务属性和资源需求。
-特别是应用接口层必须显式暴露优先级概念，
-使用户或上层框架能够根据任务性质（如延迟敏感型控制消息、带宽密集型参数传输等）进行差异化标注。
-调度时根据不同优先级进行调度决策，实现基于优先级的流量管理和跨通道的带宽分配策略。
+应用接口层显式暴露了优先级概念，
+使用户或上层框架能够根据任务性质（如延迟敏感型控制消息、带宽密集型参数传输等）设置不同优先级。
+进行调度时根据不同优先级进行决策，实现基于优先级的流量管理和跨通道的带宽分配策略。
 这样的设计不仅使系统能够满足多种通信模式的不同性能需求，还为实现服务质量控制（QoS）奠定了关键基础。
 相比仅依赖物理链路级别的调度策略，以逻辑通道为中心的优先级表达能够提供更细粒度的控制能力，
 更适合现代大模型推理中高度动态且层次丰富的通信模式。
@@ -96,110 +96,106 @@
 
 综上，应用接口层通过统一抽象、逻辑通道标识、优先级表达以及事件机制，构建了一个轻量而灵活的通信入口。
 在物理通道之上建立逻辑通道的分层设计使系统在异构链路环境下保持高度一致性，
-并为未来调度策略、流量控制和 QoS 机制的扩展奠定了坚实基础。
+并为未来调度策略、流量控制和 QoS 机制的扩展奠定基础。
 
 \section{链路执行层设计}
 
-链路执行层是 \sysname 数据面的核心，其功能是将应用接口层提交的抽象通信请求在逻辑上进行匹配、分片与调度，
-并据此生成一系列可由底层硬件执行的拷贝任务（copy task）。
-尽管不同物理链路（如 RDMA、NVLink）具有完全不同的硬件特性与操作方式，
-链路执行层在调度语义上保持严格统一：所有链路执行器均遵循同一套抽象模型，
-而差异仅体现在底层如何真正执行数据搬运这一实现细节上。
+链路执行层是 \sysname 的核心，其功能是将应用接口层提交的抽象通信请求在逻辑上进行匹配、分片与调度，
+并据此生成一系列可由底层硬件执行的拷贝任务（copy task）交由硬件进行数据传输。
+尽管不同物理链路（如 GPUDirect RDMA、NVLink）具有完全不同的硬件特性与操作方式，
+链路执行层在调度语义上保持严格统一：
+所有链路执行器均遵循同一套抽象模型，而差异仅体现在底层如何真正执行数据搬运这一实现细节上。
 
-\begin{figure}[h]
-    \centering
-    \includegraphics[width=0.9\linewidth]{figures/executor.png}
-    \caption{\sysname 链路执行器架构}
-    \label{fig:executor-arch}
-\end{figure}
+从运行时视角看，每个链路执行器对外提供统一的轮询接口，运行时线程池持续轮询所有执行器，
+使其逐步推进数据流，每一次调用轮询接口都可视为一次``调度片段''。
 
-从运行时视角看，每个链路执行器对外提供一个单一的轮询接口，运行时线程池持续轮询所有执行器，使其逐步推进数据流。
-每一次调用轮询接口都可视为一次``调度片段''。
-
-执行器在此片段内收集本地与远端的待处理请求，依据统一的算法抽象完成请求匹配、任务分片并在约束下提交拷贝任务。
+链路执行层在此片段内收集本地与远端的待处理请求，依据请求匹配与分片的算法，完成请求匹配、任务分片并在约束下提交拷贝任务。
 
 \subsection{请求匹配与分片调度算法}
 
-在统一抽象中，链路执行器维护两类核心映射表：
+为了实现请求匹配与分片发送的关键功能，链路执行器维护两类核心映射表：
 \[
-    \mathit{Local}: id \mapsto Q^{\mathrm{local}}_{id},
-    \qquad
-    \mathit{Remote}: id \mapsto Q^{\mathrm{remote}}_{id},
+      \mathit{Local}: id \mapsto Q^{\mathrm{local}}_{id},
+      \qquad
+      \mathit{Remote}: id \mapsto Q^{\mathrm{remote}}_{id},
 \]
 其中键 $id$ 为逻辑通道的唯一标识符，值为先进先出的任务队列。
 每一队列元素表示该通道上一个尚未完成的通信请求或其剩余部分。
 两类映射的语义分别为：
 
 \begin{itemize}
-    \item $\mathit{Local}$：表示本地应用侧已提交、但尚未被调度执行的待处理请求；
-    \item $\mathit{Remote}$：表示远端已准备好接收或发送的数据区间，即当前调度片段中可与本地请求进行匹配的部分。
+      \item $\mathit{Local}$：表示本地应用侧已提交、但尚未被调度执行的待处理请求；
+      \item $\mathit{Remote}$：表示远端已准备好接收或发送的数据区间，即当前调度片段中可与本地请求进行匹配的部分。
 \end{itemize}
+
+
+\begin{algorithm}[t]
+      \caption{Unified request matching and chunk emission under outstanding limit}
+      \label{alg:request-matching-and-copy-task-emission}
+      \KwIn{
+            remote task queues $\mathit{Remote}[id]$;
+            local task queues $\mathit{Local}[id]$;
+            per-id event handles $\mathit{Events}[id]$;
+            outstanding limit $N$
+      }
+      \KwOut{emit copy tasks and final signal tasks without exceeding $N$ outstanding tasks}
+
+      \BlankLine
+
+      $O \gets \mathrm{countOutstanding}()$\;
+      $(\mathit{Local},\,\mathit{Remote}) \gets \mathrm{updateQueues}()$\;
+
+      \ForEach{$(id, Q^{\mathrm{local}}_{id}) \in \mathit{Local}$ in priority order}{
+            \If{$O \ge N$}{\textbf{break}}
+
+            \If{$id \notin \mathit{Remote}$}{\textbf{continue}}
+
+            $Q^{\mathrm{remote}}_{id} \gets \mathit{Remote}[id]$\;
+
+            \While{$O < N$}{
+                  $c \gets \mathrm{nextChunk}(Q^{\mathrm{local}}_{id},\,Q^{\mathrm{remote}}_{id})$\;
+
+                  \If{$c = \varnothing$}{\textbf{break}}
+
+                  $\mathrm{EmitCopy}(c)$\;
+                  $O \gets O + 1$\;
+
+                  \If{$\mathrm{isLast}(c)$}{
+                        $\mathrm{EmitSignal}(c,\mathit{Events}[id])$\;
+                  }
+            }
+      }
+\end{algorithm}
 
 调度算法在一次轮询调用内部顺序执行以下步骤：
 
 \begin{enumerate}
-    \item \textbf{按优先级遍历逻辑通道。}
-          调度器以通道优先级对 $id$ 排序，从最高优先级开始依次访问 $(id, Q^{\mathrm{local}}_{id}) \in \mathit{Local}$，
-          同一通道内部严格遵循 FIFO 语义。
-    \item \textbf{跨端匹配。}
-          若某个通道 $id$ 在 $\mathit{Remote}$ 中尚无对应队列，则远端尚未准备好与之匹配，
-          调度器跳过该通道。
-    \item \textbf{分片生成。}
-          对匹配成功的通道，从 $Q^{\mathrm{local}}_{id}$ 与 $Q^{\mathrm{remote}}_{id}$ 的队首取出可配对的区间，
-          按需切分为若干分片（chunk）。
-    \item \textbf{提交拷贝任务。}
-          对于每个分片 $c$，调用抽象操作 $\mathrm{Emit}(c)$ 生成逻辑上的拷贝任务。
+      \item \textbf{按优先级遍历逻辑通道。}
+            调度器以通道优先级对 $id$ 排序，从最高优先级开始依次访问 $(id, Q^{\mathrm{local}}_{id}) \in \mathit{Local}$，
+            同一通道内部严格遵循 FIFO 语义。
+      \item \textbf{跨端匹配。}
+            若某个通道 $id$ 在 $\mathit{Remote}$ 中尚无对应队列，则远端尚未准备好与之匹配，
+            调度器跳过该通道。
+      \item \textbf{分片生成。}
+            对匹配成功的通道，从 $Q^{\mathrm{local}}_{id}$ 与 $Q^{\mathrm{remote}}_{id}$ 的队首取出可配对的区间，
+            按需切分为若干分片（chunk）。
+      \item \textbf{提交拷贝任务。}
+            可以提交的分片 $c$，通过抽象操作 $\mathrm{EmitCopy}(c)$ 将其交给硬件进行数据传输。
+      \item \textbf{任务完成通知。}
+            对于完成所有分片传输的请求，调用抽象操作 $\mathrm{EmitSignal}(c,\,\mathit{Events}[id])$ 触发其关联事件的完成通知。
 \end{enumerate}
 
 为了形式化呈现上述抽象算法，我们在算法~\ref{alg:request-matching-and-copy-task-emission}给出其对应的伪代码表示。
 该伪代码描述了单次轮询调用内部的逻辑流程。
-
-\begin{algorithm}[t]
-    \caption{Unified request matching and chunk emission under outstanding limit}
-    \label{alg:request-matching-and-copy-task-emission}
-    \KwIn{
-        remote task queues $\mathit{Remote}[id]$;
-        local task queues $\mathit{Local}[id]$;
-        per-id event handles $\mathit{Events}[id]$;
-        outstanding limit $N$
-    }
-    \KwOut{emit copy tasks and final signal tasks without exceeding $N$ outstanding tasks}
-
-    \BlankLine
-
-    $O \gets \mathrm{countOutstanding}()$\;
-    $(\mathit{Local},\,\mathit{Remote}) \gets \mathrm{updateQueues}()$\;
-
-    \ForEach{$(id, Q^{\mathrm{local}}_{id}) \in \mathit{Local}$ in priority order}{
-        \If{$O \ge N$}{\textbf{break}}
-
-        \If{$id \notin \mathit{Remote}$}{\textbf{continue}}
-
-        $Q^{\mathrm{remote}}_{id} \gets \mathit{Remote}[id]$\;
-
-        \While{$O < N$}{
-            $c \gets \mathrm{nextChunk}(Q^{\mathrm{local}}_{id},\,Q^{\mathrm{remote}}_{id})$\;
-
-            \If{$c = \varnothing$}{\textbf{break}}
-
-            $\mathrm{EmitCopy}(c)$\;
-            $O \gets O + 1$\;
-
-            \If{$\mathrm{isLast}(c)$}{
-                $\mathrm{EmitSignal}(c,\mathit{Events}[id])$\;
-            }
-        }
-    }
-\end{algorithm}
 
 \subsection{最大在途量约束与粗粒度抢占}
 
 抽象算法中引入了一个全局约束参数 $N \in \mathbb{Z}_{>0}$，表示调度器在任意时刻允许存在的最大在途拷贝任务数。
 设当前在途任务数为 $O$，则调度器在每次轮询调用内部必须满足以下限制条件：
 \[
-    O < N \;\Rightarrow\; \text{允许继续提交分片},
-    \qquad
-    O \ge N \;\Rightarrow\; \text{立即终止本次调度片段}.
+      O < N \;\Rightarrow\; \text{允许继续提交分片},
+      \qquad
+      O \ge N \;\Rightarrow\; \text{立即终止本次调度片段}.
 \]
 
 这一限制带来两个效果：
@@ -214,11 +210,11 @@
 设逻辑通道 $A$ 的优先级高于通道 $B$，如果一个通道在提交请求时无分片机制，
 必须以``整条消息''为基本调度单元，则会出现以下问题：
 \begin{itemize}
-    \item 若 $B$ 先提交了一个体积巨大（例如数百 MB）的消息，
-          调度器一旦开始处理该消息，就必须持续执行直到其全部拷贝操作完成；
-    \item 此期间，尽管通道 $A$ 的任务优先级更高、且 Local/Remote 匹配已就绪，
-          调度器也无法中断通道 $B$ 的长消息执行；
-    \item 结果便是 \textbf{低优先级通道占据调度窗口，高优先级通道被延迟}，即典型的优先级反转。
+      \item 若 $B$ 先提交了一个体积巨大（例如数百 MB）的消息，
+            调度器一旦开始处理该消息，就必须持续执行直到其全部拷贝操作完成；
+      \item 此期间，尽管通道 $A$ 的任务优先级更高、且 Local/Remote 匹配已就绪，
+            调度器也无法中断通道 $B$ 的长消息执行；
+      \item 结果便是 \textbf{低优先级通道的任务占据调度窗口，高优先级通道的任务被延迟}，即典型的优先级反转。
 \end{itemize}
 
 这类优先级反转不仅导致延迟不可控，也会在大模型推理场景中放大尾延迟（tail latency），
@@ -228,200 +224,221 @@
 引入任务分片后，每条消息被切割为多个小分片 $c_1, c_2, \dots$，
 而最大在途量 $N$ 则进一步限制了调度器在一次轮询中最多只能提交有限个分片，二者结合产生如下效果：
 
+\begin{figure}[h]
+      \centering
+      \includegraphics[width=0.9\linewidth]{figures/priority_sched.png}
+      \caption{基于分片与最大在途量的优先级调度示意图}
+      \label{fig:priority_sched}
+\end{figure}
+
 \begin{enumerate}
-    \item \textbf{“长任务”失去垄断调度窗口的能力。}
-          每处理完最多 $N$ 个分片，调度器必须结束当前片段并回到最外层轮询入口，
-          再次按优先级从高到低遍历所有逻辑通道。
-    \item \textbf{高优先级通道在两个片段之间自然获得调度机会。}
-          即使低优先级通道有一个极长的消息，其最长的独占窗口也仅为 $N$ 个分片的提交时间。
-          无需真正中断实现了粗粒度抢占。
-    \item \textbf{调度公平性得到保证。}
-          所有通道都在轮询序中按优先级获得机会，长消息和短消息都以分片粒度共享链路。
+      \item \textbf{长任务失去垄断调度窗口的能力。}
+            每处理完最多 $N$ 个分片，调度器必须结束当前片段并回到最外层轮询入口，
+            再次按优先级从高到低遍历所有逻辑通道。
+      \item \textbf{高优先级通道在两个片段之间自然获得调度机会。}
+            即使低优先级通道有一个极长的消息，其最长的独占窗口也仅为 $N$ 个分片的提交时间。
+            无需真正中断实现了粗粒度抢占。
+      \item \textbf{调度公平性得到保证。}
+            所有通道都在轮询序中按优先级获得机会，长消息和短消息都以分片粒度共享链路。
 \end{enumerate}
 
-在抽象意义上，这种机制实现了：
-消息层面的时间片轮转（time slicing）+优先级驱动的调度顺序，
-在没有硬件抢占的前提下，避免优先级反转，并显著改善多通道竞争下的尾延迟表现。
+图~\ref{fig:priority_sched} 展示了基于分片与最大在途量约束的优先级调度示意图。
+各通道的任务被拆分为多个分片，在最大在途量约束 $N = 2$、当前在途任务数 $ O = 0 $ 的情况下，
+每次轮询最多提交两个分片。
+第一次轮询时，最高优先级通道为空，因此从中优先级通道提交了两个分片，$ O = 2 $；
+随后在第二次轮询时，高优先级通道有任务到达，
+由于上一轮提交的中优先级通道的两个分片尚未完成，高优先级任务的分片没有调度机会；
+在第三次轮询时，中优先级通道的两个分片已经完成，此时$ O = 0 $，满足最大在途量约束 $O < N$，
+调度器得以提交高优先级通道的两个分片。
+
+通过消息层面的时间片轮转（time slicing），实现了基于优先级的调度，
+在没有硬件抢占的前提下，避免优先级反转，可以改善多通道竞争下的尾延迟表现。
 
 \subsection{非阻塞任务提交}
 
-抽象操作 $\mathrm{Emit}(c)$ 的一个核心设计目标，
+抽象操作 $\mathrm{EmitCopy}(c)$ 的一个核心设计目标，
 是确保链路执行器在高并发推理场景中始终保持“可推进性”（progress guarantee），
 即调度器在任何时刻都不因单个通道或单个大任务而阻塞整体调度过程。
-非阻塞语义带来了三点重要性质：
+非阻塞语义有三个重要性质：
 
 \begin{enumerate}
-    \item \textbf{提交阶段不等待硬件完成。}
-          链路执行器在调用 $\mathrm{Emit}(c)$ 时，仅将分片加入底层链路的待执行结构，
-          而不会主动触发线程级的等待，也不会阻塞调度器对其他通道的处理。
-          因此，调度器可在一次轮询片段中连续处理多个通道，而不受硬件执行延迟干扰。
-    \item \textbf{提交与完成解耦。}
-          拷贝任务的提交仅意味着“此任务已被调度器批准执行”，但其完成由独立的事件机制负责。
-          这种解耦使得调度过程本身保持轻量化，
-          且允许应用端与调度端在事件层面共享统一的完成语义，无需关心具体链路差异。
-    \item \textbf{提高链路饱和能力与整体吞吐。}
-          由于链路执行器不因任何任务的执行时间而阻滞，其轮询频率可足够高，
-          从而能够更及时地处理 Remote 侧到达的新请求，维持更稳定的链路利用率。
+      \item \textbf{提交阶段不等待硬件完成。}
+            链路执行器在调用 $\mathrm{EmitCopy}(c)$ 时，仅将分片加入底层链路的待执行结构，
+            而不会主动触发线程级的等待，也不会阻塞调度器对其他通道的处理。
+            因此，调度器可在一次轮询片段中连续处理多个通道，而不受硬件执行延迟干扰。
+      \item \textbf{提交与完成解耦。}
+            拷贝任务的提交仅意味着“此任务已被调度器批准执行”，但其完成由独立的事件机制负责。
+            这种解耦使得调度过程本身保持轻量化，
+            且允许应用端与调度端在事件层面共享统一的完成语义，无需关心具体链路差异。
+      \item \textbf{提高链路饱和能力与整体吞吐。}
+            由于链路执行器不因任何任务的执行时间而阻滞，其轮询频率足够高，
+            从而能够更及时地处理 Remote 侧到达的新请求，维持更稳定的链路利用率。
 \end{enumerate}
 
-最终效果是：链路执行层在抽象结构上实现了完全不依赖 GPU 的任务推进机制，
-并且不会因个别大任务或慢任务而停滞，为后续的分片化调度与粗粒度抢占奠定基础。
-
-\todo{整体结构如图所示。在此处添加一幅结构示意图：展示 Local/Remote 映射表、调度器、以及底层链路后端之间的关系。}
+链路执行层实现了完全不依赖 GPU 的任务推进机制，
+并且不会因个别大任务或慢任务而停滞，保证了运行时线程池能够持续高效地驱动底层链路。
 
 \section{RDMA 链路执行器设计}
 
 \subsection{SM-free 的跨节点通信}
 
 RDMA 链路执行器负责在跨节点 GPU 之间建立一条完全由网卡驱动的数据通路。
-在这一通路上，数据搬运的主体是 RDMA 网卡（RNIC），GPU 仅以“被访问的存储体”的身份参与，
-整个传输过程中无需调度任何参与通信的 GPU 核函数，也不会占用流式多处理器（SM）。
+图 ~\ref{fig:pickle-rdma-arch} 展示了 RDMA 链路执行器的数据流和控制流。
+在 RDMA 链路执行器中，数据搬运的主体是 RDMA 网卡（RNIC），GPU 仅作为数据存储介质参与，
+整个传输过程中无需启动任何参与通信的 GPU 核函数，因此也不会占用流式多处理器（SM）。
+通信的控制面则由 CPU 发起，并且借助高性能 RDMA 网络进行控制面元数据的传输，以及通信完成的通知。
 
-结合前文的统一抽象可以将 RDMA 通信路径概括为：
+结合前文的统一抽象可以将 RDMA 通信的数据流概括为：
 \[
-    \mathrm{GPU}_{\mathrm{src}}
-    \xrightarrow{\text{DMA}}
-    \mathrm{RNIC}_{\mathrm{src}}
-    \xrightarrow{\text{网络}}
-    \mathrm{RNIC}_{\mathrm{dst}}
-    \xrightarrow{\text{DMA}}
-    \mathrm{GPU}_{\mathrm{dst}}.
+      \mathrm{GPU}_{\mathrm{src}}
+      \xrightarrow{\text{DMA}}
+      \mathrm{RNIC}_{\mathrm{src}}
+      \xrightarrow{\text{网络}}
+      \mathrm{RNIC}_{\mathrm{dst}}
+      \xrightarrow{\text{DMA}}
+      \mathrm{GPU}_{\mathrm{dst}}.
 \]
-源端和目的端的 GPU 显存都在初始化阶段注册为可被 RDMA 访问的内存区域，
-此后所有数据搬运均由 RNIC 通过 DMA 完成。运行时线程池仅负责在 CPU 侧驱动链路执行器：
-收集应用层提交的请求、进行逻辑通道上的匹配与分片、并将生成的拷贝任务提交给硬件执行。
 
-在这种设计下：
+\begin{figure}[h]
+      \centering
+      \includegraphics[width=0.95\linewidth]{figures/pickle_rdma.png}
+      \caption{RDMA 链路执行器示意图}
+      \label{fig:pickle-rdma-arch}
+\end{figure}
+
+源端和目的端的 GPU 显存都在初始化阶段注册为可被 RDMA 访问的内存区域，
+此后所有数据搬运均由 RNIC 通过 DMA 完成。运行时线程池仅负责在 CPU 侧驱动链路执行器，
+收集应用层提交的请求、进行逻辑通道上的匹配与分片、并将生成的拷贝任务提交给硬件执行。在这种设计下：
 \begin{itemize}
-    \item 通信控制面完全落在 CPU 侧，链路执行器通过统一的轮询接口推进数据流，不依赖 GPU 上的任何辅助计算；
-    \item 数据面由 RDMA 网卡独立完成，不需要经过主机内存中转，也不需要 GPU SM 参与搬运；
-    \item 推理任务可以在 GPU 上独占计算资源，通信仅通过 DMA 访问显存，对计算流水线的干扰被降到最低。
+      \item 通信控制面完全落在 CPU 侧，链路执行器通过统一的轮询接口推进数据流，不依赖 GPU 上的任何辅助计算；
+      \item 数据面由 RDMA 网卡独立完成，不需要经过主机内存中转，也不需要 GPU SM 参与搬运；
+      \item 推理任务可以在 GPU 上独占计算资源，通信仅通过 DMA 访问显存，对计算流水线的干扰被降到最低。
 \end{itemize}
 
-因此，对跨节点数据传输而言，RDMA 链路执行器为 \sysname 提供了一条真正意义上的 SM-free 通信通路：
-计算与通信在资源维度上实现了高度解耦，为后续在大规模推理场景下叠加复杂调度策略提供了充足空间。
+因此对跨节点数据传输而言，RDMA 链路执行器为 \sysname 提供了完全 SM-free 的通信通路：
+计算与通信不共享任何资源，实现了高度解耦，为大规模推理场景下计算通信并行的复杂调度提供了空间。
 
 \subsection{Receiver-Initiated 控制模式}
 
-在 RDMA 语义下，单边写（one-sided write）操作天然适合构建
-“接收方准备缓冲区、发送方主动写入”的协作模式。
-原因在于：RDMA Write 只要求发送方掌握远端缓冲区的地址与访问令牌，
+在 RDMA 通信中，单边写（one-sided write）操作天然适合构建
+接收方准备缓冲区、发送方主动写入的协作模式。
+RDMA Write 只要求发送方掌握远端缓冲区的地址与访问令牌，
 即可在对端 CPU 与 GPU 完全无感知的前提下完成写入。
 
-\sysname 在 RDMA 链路上采用了典型的 Receiver-Initiated 控制模式：
+\sysname 在 RDMA 链路上采用了接收方发起 （Receiver-Initiated） 的控制模式：
 \begin{enumerate}
-    \item 接收方在调用 RECV 操作时，为某个逻辑通道 $id$ 预先分配一段目标缓冲区，
-          并完成必要的 RDMA 访问授权（例如将其注册为可被对端写入的内存区域）；
-    \item 接收方将该缓冲区的元数据打包为一个\emph{接收描述符}，
-          其中至少包含逻辑通道标识符、目标地址区间以及访问权限信息；
-    \item 该接收描述符通过跨节点的轻量级控制报文发送给发送方，
-          在链路执行层抽象中，体现为远端队列 $\mathit{Remote}$ 中新增的一个元素；
-    \item 发送方在本地看到 $\mathit{Local}$ 中存在待发送请求、且 $\mathit{Remote}$ 中存在对应通道的接收描述符后，
-          即可基于这些描述符构造一系列 RDMA Write 操作，将数据主动写入对端缓冲区。
+      \item 接收方在调用 RECV 操作时，为某个逻辑通道 $id$ 预先分配一段目标缓冲区，
+            并完成必要的 RDMA 访问授权（例如将其注册为可被对端写入的内存区域）；
+      \item 接收方将该缓冲区的元数据打包为一个\emph{接收描述符}，
+            包含逻辑通道标识符、目标地址区间以及访问权限信息；
+      \item 该接收描述符通过跨节点的轻量级控制报文发送给发送方，
+            在链路执行层抽象中，体现为远端队列 $\mathit{Remote}$ 中新增的一个元素；
+      \item 发送方在本地看到 $\mathit{Local}$ 中存在待发送请求、且 $\mathit{Remote}$ 中存在对应通道的接收描述符后，
+            即可将请求分片，并基于接收描述符构造 RDMA Write 操作，将数据主动写入对端缓冲区。
 \end{enumerate}
 
-从职责划分上看：
-\begin{itemize}
-    \item 接收方决定“缓冲区在哪、能写多少”，通过发布描述符来定义接收侧的边界；
-    \item 发送方决定“何时写、如何分片写”，在统一的调度算法下为不同逻辑通道分配链路资源；
-    \item 两端都通过本地事件机制获知逻辑请求的完成时间点，而无需显式参与对方的执行过程。
-\end{itemize}
+从职责划分上看，接收方决定“缓冲区在哪、能写多少”，通过发布描述符来定义接收侧的边界；
+发送方决定“何时写、如何分片写”，在统一的调度算法下为不同逻辑通道分配链路资源；
+两端都通过本地事件机制向上层通知逻辑请求的完成时间点，而无需显式参与对方的执行过程。
 
 单边写的特性使得这一 Receiver-Initiated 模式尤为自然：
 接收方只需在控制面上准备好缓冲区并告知发送方，一旦描述符抵达发送端，
 后续的数据面传输即可完全由发送方链路执行器驱动，无需再唤醒接收方 CPU 或 GPU 参与中间过程。
 
-\subsection{抽象请求匹配算法在 RDMA 上的落地}
+\subsection{请求匹配算法在 RDMA 上的特化}
 
 前文算法~\ref{alg:request-matching-and-copy-task-emission} 给出了统一的请求匹配与分片调度过程。
-在 RDMA 链路上，这一算法主要在发送端落地，其内部维护的
+在 RDMA 链路上，这一算法主要在发送端运行，其内部维护的
 \[
-    \mathit{Local}: id \mapsto Q^{\mathrm{local}}_{id},
-    \qquad
-    \mathit{Remote}: id \mapsto Q^{\mathrm{remote}}_{id}
+      \mathit{Local}: id \mapsto Q^{\mathrm{local}}_{id},
+      \qquad
+      \mathit{Remote}: id \mapsto Q^{\mathrm{remote}}_{id}
 \]
 分别表示发送端本地待发送请求队列与来自远端 Receiver 的接收描述符队列。
 其中 $id$ 是逻辑通道唯一标识符，$Q^{\mathrm{local}}_{id}$ 与 $Q^{\mathrm{remote}}_{id}$ 均为先进先出的队列。
 
 \paragraph{跨节点的队列更新：基于 RDMA Send 的控制面传输}
 
-抽象算法中队列更新在 RDMA 场景下同时涉及本地状态更新与跨节点控制面同步。
+算法中队列更新在 RDMA 场景下同时涉及本地状态更新与跨节点控制面同步。
 \[
-    (\mathit{Local},\,\mathit{Remote}) \gets \mathrm{updateQueues}()
+      (\mathit{Local},\,\mathit{Remote}) \gets \mathrm{updateQueues}()
 \]
 
-一方面，$\mathit{Local}$ 的更新完全属于本地操作：运行时将应用接口层提交的 SEND 任务封装为待发送请求，
+一方面，$\mathit{Local}$ 的更新完全属于本地操作：运行时将应用接口层调用的 SEND 操作封装，
 并按照逻辑通道与 FIFO 顺序写入对应的 $Q^{\mathrm{local}}_{id}$。
 
-另一方面，$\mathit{Remote}$ 的更新依赖 RDMA 的双边发送能力完成跨节点通信。
+另一方面，$\mathit{Remote}$ 的更新依赖 RDMA 的双边操作原语完成跨节点通信。
 接收方在本地构造好接收描述符后，通过一次 RDMA Send 将其以轻量控制报文的形式发送给对端；
-发送方在 Recv 队列中取出该报文，解析后将其加入对应的 $Q^{\mathrm{remote}}_{id}$，
+发送方在 RDMA 接收队列中取出该报文，解析后将其加入对应的 $Q^{\mathrm{remote}}_{id}$，
 从而获得远端缓冲区的最新可写区间。
 
 这样，$\mathrm{updateQueues}()$ 在逻辑上完成了“应用层请求 $\Rightarrow \mathit{Local}$”和
 “跨节点控制报文 $\Rightarrow \mathit{Remote}$”的双向更新：
 \begin{itemize}
-    \item RDMA Send/Recv 通道仅承载轻量级的控制信息（接收描述符），
-          不参与大规模数据搬运，避免了控制面对数据面带宽的挤占；
-    \item 一旦描述符抵达，发送端就可以在完全本地的视角下同时看到 $\mathit{Local}$ 与 $\mathit{Remote}$ 的最新状态，
-          从而依据统一算法进行匹配与分片。
+      \item RDMA 双边操作 Send/Recv 仅承载轻量级的控制信息（接收描述符），
+            不参与大规模数据搬运，避免了控制面对数据面带宽的挤占；
+      \item 一旦描述符抵达，发送端就可以在完全本地的视角下同时看到 $\mathit{Local}$ 与 $\mathit{Remote}$ 的最新状态，
+            从而依据统一算法进行匹配与分片。
 \end{itemize}
 
 \paragraph{EmitCopy：RDMA Write 分片提交原语}
 
-在 RDMA 链路上，抽象操作 $\mathrm{EmitCopy}(c)$ 直接对应为若干条 RDMA Write 操作的批量提交。
+在 RDMA 链路上，操作 $\mathrm{EmitCopy}(c)$ 对应为若干条 RDMA Write 操作的批量提交。
 对于算法生成的每个分片 $c$，发送端链路执行器根据 $Q^{\mathrm{local}}_{id}$ 与
-$Q^{\mathrm{remote}}_{id}$ 中记录的源地址、目的地址及长度，构造一条逻辑上的“单边写任务”，并将其附加到当前的工作请求列表（WR list）中。
+$Q^{\mathrm{remote}}_{id}$ 中记录的源地址、目的地址及长度，构造一条“单边写”的 RDMA 工作请求（WR），并将其附加到当前的工作请求列表（WR list）中。
 
-这一过程体现了 RDMA Write 的几个关键特性：
+这一过程涉及到 RDMA Write 的几个关键特性：
 \begin{itemize}
-    \item \textbf{单边性}：发送方仅依赖远端缓冲区的地址及访问令牌即可完成写入，
-          接收方无须在数据路径上参与任何显式操作；
-    \item \textbf{DMA 搬运}：实际数据传输由 RNIC 在两端 GPU 显存之间通过 DMA 完成，
-          CPU 只负责构造和提交工作请求；
-    \item \textbf{可批量提交}：多个分片可以在一次轮询片段内被组织成一个 WR list，
-          通过一次 doorbell 动作整体提交给 RNIC，从而减少 CPU–NIC 间的交互开销。
+      \item \textbf{单边性}：发送方仅依赖远端缓冲区的地址及访问令牌即可完成写入，
+            接收方无须在数据路径上参与任何显式操作；
+      \item \textbf{DMA 搬运}：实际数据传输由 RNIC 在两端 GPU 显存之间通过 DMA 完成，
+            CPU 只负责构造和提交工作请求；
+      \item \textbf{可批量提交}：多个分片可以在一次轮询片段内被组织成一个 WR list，
+            通过一次 doorbell 动作整体提交给 RNIC，从而减少 CPU–NIC 间的交互开销。
 \end{itemize}
 
 抽象算法中的在途量约束参数 $N$ 在这里自然对应“当前允许运行中的 RDMA Write 任务数量上限”。
 设当前在途任务数为 $O$，则在一次轮询过程中，链路执行器仅在 $O < N$ 的条件下继续为新的分片调用 $\mathrm{EmitCopy}(c)$，
-并将对应的写请求加入 WR list。在 WR list 被提交后，这些请求进入 RNIC 队列，$O$ 随之增加。
+并将对应的写请求加入 WR list。
+
+在 WR list 被提交后，这些请求进入 RNIC 队列，$O$ 随之增加，
+每一轮提交的 WR list 的长度最多为 $ max(N - O, count(chunks))$ 。
 因此，$N$ 实际上约束了每次轮询片段中能够生成的 WR list 长度以及全局在途 WR 的峰值，
 避免单次提交过多分片导致硬件排队过长，同时也为多通道之间的粗粒度抢占保留调度空间。
 
 \paragraph{EmitSignal：RDMA Write with Imm 完成语义}
 
-RDMA Write 操作存在重大的局限性：\emph{完成事件只在发送方本地可见}。
-换言之，RNIC 在完成一条 RDMA Write 后，最多在发送端的完成队列上生成本地完成事件，
-而接收端并不会获得任何自动的通知。这与抽象算法中要求的
-“在最后一个分片提交后，向两侧交付统一的完成语义”之间存在差距。
+RDMA Write 操作的局限是完成事件只在发送方本地可见。
+换言之，RNIC 在完成一条 RDMA Write 后，仅在发送端的完成队列上生成本地完成事件，
+而接收端并不会获得任何通知。
+这与算法中要求的“在最后一个分片提交后，向两侧交付统一的完成语义”之间存在差距。
 
-为弥补这一差距，RDMA 链路执行器将抽象的 $\mathrm{EmitSignal}(c,\mathit{Events}[id])$ 映射为：
-在逻辑请求的最后一个分片上，使用带立即数的 RDMA Write（RDMA Write with Immediate）：
+为弥补这一差距，RDMA 链路执行器将 $\mathrm{EmitSignal}(c,\mathit{Events}[id])$ 映射为：
+在逻辑请求的最后一个分片上，使用带立即数的 RDMA Write（RDMA Write with Immediate） 以通知接收端：
 \begin{itemize}
-    \item 从发送端视角看，最后一个分片仍然是一次 RDMA Write 操作，
-          其完成事件会出现在本地完成队列上，用于触发本地事件并回收资源；
-    \item 从接收端视角看，该操作同时在接收端的 Recv 队列上生成一条带立即数的完成事件，
-          抽象上相当于“在数据全部写入后自动附带了一条控制通知”，
-          接收方可以通过解析该立即数恢复逻辑通道标识符或请求编号，并触发对应的本地事件。
+      \item 从发送端视角看，最后一个分片仍然是一次 RDMA Write 操作，
+            其完成事件会出现在本地完成队列上，用于触发本地事件并回收资源；
+      \item 从接收端视角看，该操作同时在接收端的 RDMA Recv 队列上生成一条带立即数的完成事件，
+            相当于“在数据全部写入后自动附带了一条控制通知”，弥补了 RDMA Write 的局限性，
+            接收方可以通过解析该立即数恢复逻辑通道标识符或请求编号，并触发对应的本地事件。
 \end{itemize}
 
 因此，$\mathrm{EmitSignal}(\cdot)$ 在 RDMA 上的含义可以概括为：
 \begin{itemize}
-    \item 将“\emph{这是该逻辑请求的最后一个分片}”的信息编码进最后一次写操作；
-    \item 通过 RDMA Write with Immediate 在\emph{不增加额外控制报文}的前提下，
-          同时为发送端和接收端提供一次同步的完成通知；
-    \item 在链路执行器内部，将这次完成事件与算法中的 $\mathit{Events}[id]$ 关联，
-          对应用接口层呈现出统一的“请求完成”事件语义。
+      \item 将“这是该逻辑请求的最后一个分片”的信息编码进最后一次写操作；
+      \item 通过 RDMA Write with Immediate 在不增加额外控制报文 RTT （Round Trip Time）的前提下，
+            同时为发送端和接收端提供一次同步的完成通知；
+      \item 在链路执行器内部，将这次完成事件与算法中的 $\mathit{Events}[id]$ 关联，
+            对应用接口层呈现出统一的“请求完成”事件语义。
 \end{itemize}
 
 综上，统一的请求匹配与分片调度算法在 RDMA 链路上的落地可以理解为：
 \begin{itemize}
-    \item 通过基于 RDMA Send/Recv 的控制面通信维护跨节点的 $\mathit{Remote}$ 队列；
-    \item 在发送端依据 $\mathit{Local}$ 与 $\mathit{Remote}$ 进行分片匹配，
-          并用受在途量约束的 RDMA Write 批量提交这些分片；
-    \item 在最后一个分片上使用 RDMA Write with Immediate 实现抽象中的 $\mathrm{EmitSignal}$，
-          将逻辑完成语义精确映射到两端的事件机制之上。
+      \item 基于 RDMA 双边操作的 Send/Recv 原语进行控制面通信维护跨节点的 $\mathit{Remote}$ 队列；
+      \item 在发送端依据 $\mathit{Local}$ 与 $\mathit{Remote}$ 进行分片匹配，
+            并用受最大在途量约束的 RDMA Write 工作请求构造工作请求列表批量提交这些分片；
+      \item 在最后一个分片上使用 RDMA Write with Immediate 实现的 $\mathrm{EmitSignal}$，
+            将逻辑完成语义精确映射到两端的事件机制之上。
 \end{itemize}
 
 在这一映射关系下，\sysname 不需要暴露任何 RDMA 细节给应用层，
@@ -430,158 +447,166 @@ RDMA Write 操作存在重大的局限性：\emph{完成事件只在发送方本
 
 \section{NVLink 链路执行器设计}
 
-与 RDMA 链路执行器类似，NVLink 链路执行器同样基于统一的请求匹配与分片调度抽象
-（算法~\ref{alg:request-matching-and-copy-task-emission}），
+与 RDMA 链路执行器类似，NVLink 链路执行器同样基于统一的请求匹配与分片调度算法
+（~\ref{alg:request-matching-and-copy-task-emission}），
 区别仅在于其底层数据搬运与完成通知的具体原语不同。
-在单节点多 GPU 场景下，NVLink 提供了高带宽、低延迟的 Peer-to-Peer 访问能力，
+在单节点多 GPU 场景下，NVLink 提供了高带宽、低延迟的跨 GPU 访问能力，
 \sysname 利用这一能力，将 NVLink 通道构建为
-\emph{共享内存上的控制面} + \emph{GPU Copy Engine 驱动的数据面} 的双层结构，
+“基于主机共享内存的控制面 + GPU Copy Engine 驱动的数据面”的双层结构，
 在不占用 GPU SM 的前提下完成单机多 GPU 间的数据传输。
 
 \subsection{SM-free 的单机多 GPU 通信：GPU Copy Engine}
 
-在 NVLink 环境中，不同 GPU 之间可以通过 Peer Memory 或 CUDA IPC 直接访问对方显存。
+在支持 NVLink 的单机多卡环境中，不同 GPU 之间可以通过 CUDA IPC 和 Peer Access 直接访问其他 GPU 内存。
 \sysname 在初始化阶段为参与通信的 GPU 开启 Peer Access，并基于CUDA IPC Memory Handle 建立跨进程的显存映射。
-在此基础上，NVLink 链路的数据路径可以抽象为：
-\[
-    \mathrm{GPU}_{\mathrm{src}}
-    \xrightarrow{\text{NVLink / NVSwitch}}
-    \mathrm{GPU}_{\mathrm{dst}},
-\]
-实际的数据搬运由目的端 GPU 上的 copy engine 通过内存拷贝发起并执行，
+实际的数据搬运由目的端 GPU 上的 Copy Engine 通过内存拷贝发起并执行，
 而非通过任意形式的 GPU kernel 进行“计算式搬运”。
 
-这一设计具有与 RDMA 类似的 SM-free 特性：
+在此基础上，NVLink 链路的数据路径可以概括为：
+\[
+      \mathrm{GPU}_{\mathrm{src}}
+      \xrightarrow{\text{ Copy Engine + NVLink}}
+      \mathrm{GPU}_{\mathrm{dst}},
+\]
+
+\begin{figure}[h]
+      \centering
+      \includegraphics[width=0.85\linewidth]{figures/pickle_nvlink.png}
+      \caption{NVLink 链路执行器示意图}
+      \label{fig:pickle-nvlink-arch}
+\end{figure}
+
+图 ~\ref{fig:pickle-nvlink-arch} 展示了 NVLink 链路执行器的数据流和控制流，
+其具有与 RDMA 链路执行器类似的 SM-free 特性：
 
 \begin{itemize}
-    \item 数据搬运完全由 GPU 内部的 copy engine 负责，实现的是纯内存传输，
-          不需要在任一 GPU 上启动计算 kernel；
-    \item 控制面由 CPU 线程池和进程间共享内存承载，用于交换源缓冲区描述符与完成通知，
-          不占用 GPU SM；
-    \item 因此计算与通信在 GPU 资源维度上得到有效解耦，推理任务可以独占 SM 完成计算，
-          而 NVLink 通信仅使用 copy engine 这一独立硬件单元。
+      \item 数据搬运完全由 GPU 内部的 Copy Engine 负责，实现纯内存传输，
+            不需要在任一 GPU 上启动计算 kernel；
+      \item 控制面基于主机共享内存，用于支持高效传输控制面信息，包括缓冲区元数据以及完成通知；
+      \item 计算与通信在 GPU 资源维度上得到有效解耦，推理任务可以独占 SM 进行计算，
+            而 NVLink 通信仅使用 Copy Engine 这一独立硬件单元。
 \end{itemize}
 
-在抽象层面上，NVLink 链路执行器为单机多 GPU 场景提供了与 RDMA 链路相同的 SM-free 语义：
-通信过程不需要任何辅助计算 kernel，即可达到高带宽、低延迟的数据搬运效果。
+NVLink 链路执行器为支持 NVLink 的单机多 GPU 场景提供了与基于 RDMA 链路跨节点传输相同的 SM-free 保证：
+通信过程不需要向 GPU 启动任何辅助通信的 kernel，即可达到高带宽、低延迟的数据搬运效果。
 
 \subsection{Sender-Initiated 控制模式与 Receiver 侧匹配}
 
-与 RDMA 链路采用 Receiver-Initiated 模式（接收端先发布可写缓冲区）不同，
-NVLink 链路执行器在控制面上选择了 Sender-Initiated 模式：
+与 RDMA 链路采用 Receiver-Initiated （接收端发起） 模式不同，
+NVLink 链路执行器在控制面上选择了 Sender-Initiated （发送端发起）模式：
 \begin{enumerate}
-    \item 发送方在应用层提交发送请求时，为逻辑通道 $id$ 上的待发送数据生成
-          一条发送请求，并记录源 GPU 缓冲区的地址、长度等元信息；
-    \item 发送方通过进程间共享内存上的单生产者单消费者（SPSC）队列将这一“发送描述符”
-          投递给接收方，该 SPSC 队列可以看作 NVLink 链路上的控制报文通道；
-    \item 接收方的运行时线程池在轮询过程中从共享内存 SPSC 队列中取出描述符，
-          并将其写入本地维护的远端请求队列，从而获得远端 GPU 上的可读地址区间；
-    \item 同时，应用层在接收端提交接收请求时，在本地产生相应的接收请求，
-          进入另一条本地队列，随后由统一的匹配算法将“远端发送 + 本地接收”配对。
+      \item 发送方在应用层提交发送请求时，为逻辑通道 $id$ 上的待发送数据生成
+            一条发送请求，并记录源 GPU 缓冲区的 IPC Handle、地址偏移量、长度等元数据；
+      \item 发送方和接收方通过主机共享内存上的单生产者单消费者（SPSC）队列进行元数据交换，
+            该 SPSC 队列可以看作 NVLink 链路上的控制报文通道，
+            发送方为生产者，将发送描述符放入该队列；
+      \item 接收方作为消费者，从共享内存 SPSC 队列中取出描述符，
+            并将其写入本地维护的远端请求队列，从而获得远端 GPU 上的可读地址区间；
+      \item 同时，应用层在接收端提交接收请求时，在本地产生相应的接收请求，
+            进入另一条本地队列，随后由统一的匹配算法将“远端发送 + 本地接收”配对。
 \end{enumerate}
 
-需要特别指出的是：虽然在控制面上是发送端率先发起元数据交换，
-但统一请求匹配与分片调度算法的核心执行（尤其是 $\mathrm{EmitCopy}$）实际上集中在接收端完成。
+需要指出的是：虽然在控制面上是发送端率先发起元数据交换，
+但统一请求匹配与分片调度算法（尤其是 $\mathrm{EmitCopy}$）是在接收端执行的。
 这一设计选择源于 NVLink 体系结构本身的特点。
 
-首先，GPU 的 copy engine 是严格绑定在本地设备上的，访问远端显存必须通过 Peer Memory 的方式间接完成。
-如果由发送端主动推进数据搬运，则意味着发送端需要不断对远端 GPU 显存发起访问，相当于让“发送端的 copy engine 推送数据”。
-这种方式不仅增加访问路径的复杂性，还可能导致发送端成为性能瓶颈，因为所有数据流量都会挤压在发送端的 copy engine 上。
+GPU 的 Copy Engine 是严格绑定在本地设备上的，访问远端 GPU 内存必须通过 Peer Access 的方式完成。
+如果由发送端主动推进数据搬运，则意味着发送端需要不断对远端 GPU 显存发起访问，相当于让“发送端的 Copy Engine 推送数据”。
+这种方式相当于将所有数据流量都会堆积在发送端的 Copy Engine 上，不仅增加访问路径的复杂性，还可能导致发送端成为性能瓶颈。
 
-相比之下，如果将匹配与拷贝都放在接收端执行，则可以采用“接收端 copy engine 从远端拉取数据”的模式。
-对每一个目标 GPU，只需维护一条绑定该 GPU 的拷贝线程及其对应的 copy engine，
+相比之下，如果将匹配与拷贝都放在接收端执行，则可以采用“接收端 Copy Engine 从远端拉取数据”的模式。
+对每一个目标 GPU，只需维护一条绑定该 GPU 的拷贝线程操作对应的 Copy Engine，
 所有指向该 GPU 的数据流量都会自然集中到本地进行处理。
 这种布局使得资源管理更加清晰，也使得系统能够在多 GPU 场景下实现更好的扩展性。
 
-综上所述，NVLink 链路执行器在控制面上采用 Sender-Initiated 模式，使发送方能够及时发布其拥有的数据；
-而核心的匹配与实际数据搬运则集中在接收端完成，从而最大化利用接收端 GPU 的 copy engine。
+综上所述，NVLink 链路执行器采用 Sender-Initiated 模式，使发送方能够及时发布其拥有的数据；
+而核心的匹配与实际数据搬运则集中在接收端完成，从而最大化利用接收端 GPU 的 Copy Engine。
 这样的设计不仅保持了 SM-free 的特性，还极大提高了单机多 GPU 通信路径的可扩展性。
 
-\subsection{抽象请求匹配算法在 NVLink 上的落地}
+\subsection{请求匹配算法在 NVLink 上的特化}
 
-在 NVLink 链路上，统一抽象中的
+在 NVLink 链路执行器中，算法的
 \[
-    \mathit{Local}: id \mapsto Q^{\mathrm{local}}_{id},
-    \qquad
-    \mathit{Remote}: id \mapsto Q^{\mathrm{remote}}_{id}
+      \mathit{Local}: id \mapsto Q^{\mathrm{local}}_{id},
+      \qquad
+      \mathit{Remote}: id \mapsto Q^{\mathrm{remote}}_{id}
 \]
-在 \emph{接收端} 进行维护与使用，其具体含义为：
+在接收端进行维护与使用，其具体含义为：
 
 \begin{itemize}
-    \item $\mathit{Local}$：接收端本地由应用接口层提交的接收请求产生的请求队列。
-          每个 $Q^{\mathrm{local}}_{id}$ 是逻辑通道 $id$ 上待接收数据的目标缓冲区集合，
-          队列按 FIFO 语义组织；
-    \item $\mathit{Remote}$：由发送端通过共享内存 SPSC 队列发布的“发送描述符”构成。
-          接收端从共享内存中取出这些描述符，并按照逻辑通道 $id$ 写入对应的 $Q^{\mathrm{remote}}_{id}$。
+      \item $\mathit{Local}$：接收端本地由应用接口层提交的接收请求产生的请求队列。
+            每个 $Q^{\mathrm{local}}_{id}$ 是逻辑通道 $id$ 上待接收数据的目标缓冲区集合，
+            队列按 FIFO 语义组织；
+      \item $\mathit{Remote}$：由发送端通过共享内存 SPSC 队列发布的“发送描述符”构成。
+            接收端从共享内存中取出这些描述符，并按照逻辑通道 $id$ 写入对应的 $Q^{\mathrm{remote}}_{id}$。
 \end{itemize}
 
 在一次轮询片段中，NVLink 链路执行器在接收端执行与算法~\ref{alg:request-matching-and-copy-task-emission} 完全一致的逻辑：
 \[
-    (\mathit{Local},\,\mathit{Remote}) \gets \mathrm{updateQueues}().
+      (\mathit{Local},\,\mathit{Remote}) \gets \mathrm{updateQueues}().
 \]
 其中 $\mathrm{updateQueues}()$ 具体完成：
 
 \begin{itemize}
-    \item 将新到达的本地接收请求加入各 $Q^{\mathrm{local}}_{id}$；
-    \item 从共享内存 SPSC 队列中拉取发送端投递的发送描述符，
-          并写入对应的 $Q^{\mathrm{remote}}_{id}$。
+      \item 将新到达的本地接收请求加入各 $Q^{\mathrm{local}}_{id}$；
+      \item 从共享内存 SPSC 队列中拉取发送端投递的发送描述符，
+            并写入对应的 $Q^{\mathrm{remote}}_{id}$。
 \end{itemize}
 
 随后，执行器按优先级遍历 $\mathit{Local}$ 中的逻辑通道，
-在存在匹配的 $Q^{\mathrm{remote}}_{id}$ 时，从两端队列队首取出可配对的区间，
+在存在匹配的请求时，从两端队列队首取出可配对的区间，
 调用 $\mathrm{nextChunk}(\cdot)$ 切分为若干分片 $c$，
 并在全局在途量约束 $N$ 下依次调用 $\mathrm{EmitCopy}(c)$ 与必要的 $\mathrm{EmitSignal}(c,\mathit{Events}[id])$。
 
 \paragraph{EmitCopy：基于 Copy Engine 的分片拷贝提交}
 
 在 NVLink 链路上，$\mathrm{EmitCopy}(c)$ 抽象操作的落地形式为：
-在接收端 GPU 上构造并提交一条“GPU-to-GPU 拷贝任务”，
-具体由接收端的后台拷贝线程与 copy engine 协作完成。
+在接收端 GPU 上构造并提交一条 GPU-to-GPU 拷贝任务，
+具体由接收端的后台拷贝线程与 Copy Engine 协作完成。
 
 对于每个分片 $c$，接收端链路执行器根据 $Q^{\mathrm{local}}_{id}$ 与
-$Q^{\mathrm{remote}}_{id}$ 中记录的源地址、目的地址和长度信息，
-生成一条 Copy Task，其中同时携带源 GPU 缓冲区的设备指针或 IPC 句柄、
+$Q^{\mathrm{remote}}_{id}$ 中的信息，生成一条 Copy Task，
+携带源 GPU 缓冲区的 IPC Handle、
 接收端本地 GPU 的目标缓冲区指针、该分片的字节长度和在整条消息中的偏移位置，
-以及所属逻辑通道 $id$ 与其关联的事件句柄等元数据。
+以及所属逻辑通道 $id$ 与其关联的事件等元数据。
 这些任务被放入接收端本地的拷贝任务队列，由绑定该 GPU 的后台拷贝线程异步取出并执行。
 
 这些任务被放入接收端本地的拷贝任务队列，由绑定该 GPU 的后台拷贝线程异步取出并执行。
 拷贝线程调用 CUDA Runtime 提供的同步或异步的内存拷贝接口：
 \begin{itemize}
-    \item 若使用同步 \texttt{cudaMemcpy}，线程会在调用返回前等待拷贝完成；
-    \item 若使用异步 \texttt{cudaMemcpyAsync}，
-          线程可以在同一 CUDA stream 上连续提交多个拷贝请求，并通过 CUDA event 追踪完成状态。
+      \item 若使用同步 \texttt{cudaMemcpy}，线程会在调用返回前等待拷贝完成；
+      \item 若使用异步 \texttt{cudaMemcpyAsync}，
+            线程可以在同一 CUDA stream 上连续提交多个拷贝请求，并通过 CUDA Event 追踪任务状态。
 \end{itemize}
 
 在抽象层面上，每一次调用 $\mathrm{EmitCopy}(c)$
-都对应着“将分片 $c$ 加入接收端 GPU copy engine 的待执行队列”这一动作，
+都对应着“将分片 $c$ 加入接收端 GPU Copy Engine 的待执行队列”这一动作，
 而在途量 $O$ 则反映为当前已提交但尚未完成的拷贝任务的数量。
 约束参数 $N$ 在 NVLink 场景中同样限制了单次轮询片段内
 能够提交的 Copy Task 数量，从而避免过长的硬件队列和不公平的调度。
 
 \paragraph{EmitSignal：基于共享内存 SPSC 的完成语义}
 
-统一抽象要求：在最后一个分片被提交后，必须对逻辑请求的完成进行统一通知。
+算法要求在最后一个分片被提交后，必须对逻辑请求的完成进行统一通知。
 在 NVLink 链路上，这一抽象通过“本地事件 + 共享内存完成通知”组合实现，
 即 $\mathrm{EmitSignal}(c,\mathit{Events}[id])$ 被映射为两个方向的一致完成语义：
 
 \begin{itemize}
-    \item \textbf{接收端本地完成通知。}
-          当 Copy Task 的最后一个分片对应的拷贝操作在接收端 GPU 上完成时，
-          拷贝线程根据任务中携带的事件句柄，将本地 $\mathit{Events}[id]$ 标记为“已完成”，
-          并唤醒等待该事件的应用接口层调用。
-    \item \textbf{发送端远程完成通知。}
-          为让发送端也获知同一逻辑请求的完成时间点，
-          拷贝线程在处理完最后一个分片后，会通过\emph{另一条}进程间共享内存 SPSC 队列
-          向发送端写入一条轻量级“完成消息”，其中包含逻辑通道 $id$ 或请求编号。
-          发送端运行时线程池在轮询该队列时收到消息，
-          即可将自身维护的事件对象置为完成。
+      \item \textbf{接收端本地完成通知。}
+            当 Copy Task 的最后一个分片对应的拷贝操作在接收端 GPU 上完成时，
+            拷贝线程根据任务中携带的事件句柄，将本地 $\mathit{Events}[id]$ 标记为“已完成”，
+            并唤醒等待该事件的应用接口层调用。
+      \item \textbf{发送端远程完成通知。}
+            为了让发送端获知同一逻辑请求的完成事件，
+            拷贝线程在处理完最后一个分片后，会通过另一条进程间共享内存 SPSC 队列
+            向发送端写入一条轻量级“完成消息”，其中包含逻辑通道 $id$ 或请求编号。
+            发送端在轮询时根据该队列收到的消息，即可将自身维护的事件对象置为完成。
 \end{itemize}
 
 因此，抽象中的 $\mathrm{EmitSignal}$ 在 NVLink 场景下被具体化为：
 在接收端通过本地事件机制向上层交付“拷贝已完成”的通知，
 在发送端通过共享内存返回一个对称的完成指示；
-整个完成路径完全建立在 copy engine 与共享内存之上，不依赖任何额外的 GPU kernel，
+整个完成路径完全建立在 Copy Engine 与共享内存之上，不依赖任何额外的核函数，
 在保持 SM-free 特性的同时，实现了与统一抽象一致的双端完成语义。
 
 \subsection{后台拷贝线程与可扩展性}
@@ -590,35 +615,35 @@ NVLink 链路执行器在接收端为每块 GPU 配置一条独立的后台拷�
 （Copying Thread），该线程在初始化时绑定对应的 CUDA device 并建立 CUDA context，
 随后在拷贝任务队列上阻塞等待，按顺序取出 Copy Task 执行。
 
-若为每一对源–目的 GPU 组合都创建独立拷贝线程，则在单节点存在 $N$ 块 GPU 时，
+若为每一对 Src-Dst GPU 组合都创建独立拷贝线程，则在单节点存在 $N$ 块 GPU 时，
 线程数量会达到 $N \times (N - 1)$，带来严重的 CPU 负担和上下文切换开销。
 因此，NVLink 链路执行器采用“单 Dst 多 Src”的线程组织结构：
 \begin{itemize}
-    \item 每块 GPU 仅对应一条拷贝线程，负责处理所有指向该 GPU 的拷贝任务；
-    \item 所有源 GPU 的数据流量在目的端汇聚，统一通过该 GPU 的 copy engine 执行；
-    \item 线程数量与 GPU 数量一一对应，总体规模为 $O(N)$ 而非 $O(N^2)$。
+      \item 每块 GPU 仅对应一条拷贝线程，负责处理所有指向该 GPU 的拷贝任务；
+      \item 所有源 GPU 的数据流量在目的端汇聚，统一通过该 GPU 的 Copy Engine 执行；
+      \item 线程数量与 GPU 数量一一对应，总体规模为 $O(N)$ 而非 $O(N^2)$。
 \end{itemize}
 
 在提交路径上，链路执行器通过在途量约束 $N$ 控制单次轮询中生成的 Copy Task 数量，
-从而避免对任一目的端 GPU 产生过高的瞬时负载。
-配合优先级驱动的逻辑通道遍历顺序，NVLink 链路执行器在多通道竞争场景下
+从而避免对任一目的端 GPU 产生过高的负载。
+配合运行时驱动的优先级请求调度，NVLink 链路执行器在多通道竞争场景下
 同样能够避免优先级反转，并提供良好的尾延迟表现。
 
 \subsection{异步化与进一步优化}
 
-在基础版本中，拷贝线程可以采用同步 \texttt{cudaMemcpy} 完成每个分片的搬运；
-为了进一步提高链路利用率，NVLink 链路执行器可以将其升级为异步模式：
+拷贝线程可以采用同步 \texttt{cudaMemcpy} 完成每个分片的搬运，
+然而为了进一步提高链路利用率，NVLink 链路执行器可以使用异步拷贝模式：
 \begin{itemize}
-    \item 使用 \texttt{cudaMemcpyAsync} 将多个分片拷贝请求提交到同一 CUDA stream；
-    \item 为每个逻辑请求或每个分片绑定 CUDA event，用于追踪其在 GPU 上的实际完成时间；
-    \item 拷贝线程在主循环中周期性检查这些 event 状态，
-          一旦检测到“最后一个分片已完成”，便触发前述的 $\mathrm{EmitSignal}$ 路径。
+      \item 使用 \texttt{cudaMemcpyAsync} 将多个分片拷贝请求提交到同一 CUDA Stream；
+      \item 为每个逻辑请求或每个分片绑定 CUDA Event，用于追踪其在 GPU 上的实际完成时间；
+      \item 拷贝线程在主循环中周期性检查这些 Event 状态，
+            一旦检测到“最后一个分片已完成”，便触发前述的 $\mathrm{EmitSignal}$ 路径。
 \end{itemize}
 
 异步拷贝模式下，拷贝线程不必在单个拷贝操作完成前阻塞等待，
-可以更高效地为多个逻辑通道提交并行拷贝请求，
+可以更高效地为多个逻辑通道提交并行拷贝请求，将提交拷贝任务的开销和后台数据传输开销重叠，
 从而在保持 SM-free 的前提下进一步提升 NVLink 通道的吞吐能力。
 
-\section{小结}
+\section{本章小结}
 
-\todo{}
+\todo{本章小节}
