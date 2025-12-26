@@ -702,19 +702,22 @@ private:
     \label{fig:nvlink-executor}
 \end{figure}
 
-\subsection{共享内存单生产者单消费者队列}
+\subsection{跨进程通信内存访问机制}
 
 NVLink 链路围绕 CUDA IPC 提供的跨进程访问和 Peer Access功能构建。
 发送方在应用层调用 \texttt{send()} 时，
 通过 \texttt{cudaIpcGetMemHandle()} 将本地 GPU 缓冲区封装为 \texttt{cudaIpcMemHandle\_t} 并传给接收方；
 接收方在拿到该 handle 之后，首先调用 \texttt{cudaIpcOpenMemHandle()}
-将发送端内存映射到本进程的地址空间获取可以在进程内部直接访问的指针，
-然后就可以在单进程内部完成 GPU-to-GPU 的内存拷贝了。
+将发送端内存映射到本进程的地址空间，获取可以在接收方进程内部直接访问的指针，
+然后就可以在接收方进程内部完成 GPU 到 GPU 的内存拷贝了。
 
-然而与 RDMA 场景中基于 \texttt{RcQueuePair} 进行控制面消息传递不同，
-NVLink 控制面依赖共享内存单生产者单消费者队列，
-用于在单节点内的多个进程之间传递 \texttt{NvlinkSendTicket} 与 \texttt{NvlinkSendTicket}，
-其具体定义如图 ~\ref{fig:nvlink-control-plane-structure} 所示。
+与 RDMA 场景中基于 \texttt{RcQueuePair} 进行控制面消息传递不同的是，
+NVLink 控制面依赖主机共享内存进行跨进程通信，在主机共享内存上构建单生产者单消费者（SPSC）队列，
+用于在单节点的多个进程之间传递控制面信息 \texttt{NvlinkSendTicket} 和 \texttt{NvlinkAck}。
+控制面信息的具体定义如图 ~\ref{fig:nvlink-control-plane-structure} 所示，
+在 \texttt{NvlinkSendTicket} 中传递 offset 是因为接收端通过 \texttt{cudaIpcOpenMemHandle()} 获取到的指针
+指向通过 \texttt{cudaIpcGetMemHandle()} 获得的设备共享内存的起始位置，
+而实际的发送缓冲区并不确保从起始位置开始，需要 offset 进行计算。
 
 在 \texttt{NvlinkSender} 中，\texttt{send\_ticket\_queue\_} 用作
 发送端到接收端的单向控制面消息通道，
