@@ -157,7 +157,7 @@ public:
 第一，为所有链路执行器提供统一、隔离且无锁的轮询环境；
 第二，通过线程绑定与亲和性控制确保执行器的 \texttt{poll()} 在稳定的线程上下文中运行；
 第三，为上层接口层提供一个可靠的调度基础，使通信请求能够在后台持续推进。
-数据传输、请求匹配、可见性保证等链路相关逻辑均由后续章节 \todo{ref} 介绍的 RDMA / NVLink 执行器负责。
+数据传输、请求匹配、可见性保证等链路相关逻辑均由后续第~\ref{sec:rdma-executor-impl}~节与第~\ref{sec:nvlink-executor-impl}~节介绍的 RDMA / NVLink 执行器负责。
 
 通过这样的设计，运行时为 \sysname 提供了一个与链路类型无关的调度基础，
 使 RDMA 与 NVLink 执行器能够在相同的模型下运行，同时保持系统整体结构的模块化与可扩展性。
@@ -267,6 +267,7 @@ ConcurrentQueue 的无锁特性保证了接口层的请求提交端完全无阻�
 这一接口层是 \sysname 全局结构中轻量级的一层，但是它可以将应用、运行时与执行器串联在一起，发挥了重要的作用。
 
 \section{RDMA 链路执行器实现}
+\label{sec:rdma-executor-impl}
 
 \subsection{初始化阶段}
 
@@ -372,14 +373,22 @@ auto mr = MemoryRegion::create(pd, std::move(buf), size).unwrap();
 
 \paragraph{RdmaFlusher 实现}
 
-\todo{更多细节}
+GPU Direct RDMA 的完成语义需要额外区分“网卡侧完成”与“设备侧可见”：
+RDMA Write with Imm 在 CPU 侧产生 CQE 仅说明该写入请求在 RNIC 侧完成，
+但其通过 PCIe DMA 写入 GPU 显存后的可见性仍可能受写合并、乱序与设备侧缓存行为等因素影响。
+因此，若应用直接将 CQE 作为“数据可消费”的判据，则在极端情况下可能观察到旧值或不完整数据。
 
-对于 GPU Direct RDMA，网卡完成 RDMA Write with Imm 并在 CPU 侧收到完成事件，
-并不意味着数据已经刷新到 GPU Memory 中。
-因此 RDMA 链路执行器在初始化阶段基于环回 QP 构造了一个 Flusher，
-用于主动触发 RDMA READ 以保证 PCIe ordering，从而确保 GPU 能看到之前 NIC 发起的写。
-该 QP 的发送与接收都指向自己，通过对 GPU 地址执行 RDMA READ，
-PCIe 会保证所有先前写入的数据在此 READ 之后对 GPU 可见。
+为此，\sysname 在接收端引入 \texttt{RdmaFlusher}，通过额外插入一条后继 RDMA Read 建立必要的顺序关系：
+RDMA 链路执行器在初始化阶段基于环回 QP 构造了一个 Flusher，该 QP 的发送与接收都指向自己；
+接收端在检测到“最后一个分片对应的 RDMA Write with Imm 完成”后，不立即触发事件完成，
+而是将该请求交由 Flusher 处理；
+Flusher 对同一 GPU 内存区域发起一次小规模 RDMA Read，
+并仅在该 Read 完成后再调用 \texttt{Event::notify()}。
+
+利用 PCIe/RDMA 路径上的顺序保证，后继 Read 等价于一道控制面“栅栏”，
+PCIe 会保证所有先前写入的数据在此 READ 之后对 GPU 可见，从而为上层提供一致的完成语义；
+并可通过批量处理或仅对最后分片执行 Flush 等策略来减少额外的控制开销。
+利用这种读-写屏障方法可以有效提供一致的完成语义，而无需对现有网络协议和硬件做更改 
 
 \begin{figure}[htbp]
     \centering
@@ -650,6 +659,7 @@ auto flusher = RdmaFlusher::create(std::move(qp)).unwrap();
 \end{algorithm}
 
 \section{NVLink 链路执行器实现}
+\label{sec:nvlink-executor-impl}
 
 与前文的 RDMA 链路不同，同一节点内部通过 NVLink 连接的多 GPU 之间不存在网卡、QP 与 Completion Queue 等传统 RDMA 抽象，
 \sysname 在该场景下将数据面下沉到 GPU Copy Engine，由后台拷贝线程统一调度，
@@ -841,4 +851,12 @@ GPU 指针的跨进程可见性由 \texttt{NvlinkCopier} 管理，在创建 Copi
 从而显著提升性能。
 
 \section{本章小结}
-
+本章从实现角度给出了 \sysname 的关键模块与工程细节。
+首先介绍了应用接口层的统一抽象，并给出了运行时的线程池轮询框架与可驱动对象接口，
+说明其如何为不同链路执行器提供一致的调度环境与线程上下文隔离；
+随后给出了基于 C++20 原子等待/通知实现的事件机制，用以支持低开销的异步完成语义。
+在链路执行器部分，本章详细展开了 RDMA 执行器的资源初始化、控制面缓冲区与 MR 注册、批处理发送与接收路径，
+并通过 \texttt{RdmaFlusher} 进一步保证 GPU Direct RDMA 场景下的数据可见性与一致完成语义；
+同时，本章给出了 NVLink 执行器在节点内跨进程场景下的控制面队列组织、后台拷贝线程推进方式，
+以及通过 CUDA IPC 映射缓存复用降低 open/close 开销的关键优化。
+通过上述实现，\sysname 在保持统一接口的同时实现了面向 RDMA 与 NVLink 的高效、可扩展且 SM-free 的通信控制面与数据面协同。

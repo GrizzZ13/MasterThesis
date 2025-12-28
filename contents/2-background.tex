@@ -82,8 +82,6 @@ KV Cache不仅是推理效率的核心，更是整个系统资源分配的关键
 
 \subsection{大模型推理的通信需求}
 
-\todo{详细讲一下 TP 中 All-Reduce、EP Dispatch-Combine、以及Prefill-Decode Disaggregation 传 KV Cache 推理的通信需求。}
-
 大模型推理的分布式部署依赖多种并行策略（如张量并行 TP、专家并行 EP 等）\cite{shoeybi2019megatron,shazeer2017moe,lepikhin2020gshard,fedus2022switch,DeepEP_repo}，
 不同并行模式下的通信语义、数据量与延迟敏感特性存在显著差异。
 同时，预填充（Prefill）与解码（Decode）阶段的计算范式差异（前者批处理并行、后者逐 token 串行）进一步加剧了通信需求的复杂性。
@@ -287,3 +285,10 @@ GDR 的性能优势在大规模分布式训练场景中尤为显著。以基于 
 
 GPU Direct RDMA 通过消除主机内存中转瓶颈，实现了跨节点 GPU 显存的直接、高效、低延迟访问，
 是构建超大规模分布式 AI 与 HPC 系统不可或缺的关键技术。
+
+\section{本章小结}
+本章围绕大模型推理的系统形态与关键通信瓶颈展开讨论。
+首先介绍了 Transformer 架构及其在推理阶段的计算与内存特征，指出 KV Cache 在提升解码效率的同时也带来显著的显存与跨阶段迁移压力；
+随后从张量并行、专家并行与 Prefill-Decode 分离等典型场景出发，分析了 All-Reduce、Dispatch/Combine 以及 KV Cache 传输等通信形态在数据规模与延迟敏感性上的差异。
+最后，本章系统梳理了面向 GPU 集群的关键互联技术与通信基础设施，包括节点内 NVLink 与跨节点 GPU Direct RDMA 的工作机制与性能特征，
+为后续章节中 \sysname 的链路抽象、控制面卸载与执行器实现提供了必要的技术背景与问题定义。
