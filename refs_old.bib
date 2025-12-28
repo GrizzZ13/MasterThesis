@@ -1,0 +1,811 @@
+@article{vaswani2017attention,
+  title   = {Attention is all you need},
+  author  = {Vaswani, Ashish and Shazeer, Noam and Parmar, Niki and Uszkoreit, Jakob and Jones, Llion and Gomez, Aidan N and Kaiser, {\L}ukasz and Polosukhin, Illia},
+  journal = {Advances in neural information processing systems},
+  volume  = {30},
+  year    = {2017}
+}
+
+@inproceedings{kalia2016rdma_design_guidelines,
+  author    = {Anuj Kalia and Michael Kaminsky and David G. Andersen},
+  title     = {Design Guidelines for High Performance {RDMA} Systems},
+  booktitle = {2016 USENIX Annual Technical Conference (USENIX ATC 16)},
+  year      = {2016},
+  isbn      = {978-1-931971-30-0},
+  address   = {Denver, CO},
+  pages     = {437--450},
+  url       = {https://www.usenix.org/conference/atc16/technical-sessions/presentation/kalia},
+  publisher = {USENIX Association},
+  month     = jun
+}
+
+@article{kaplan2020scalinglaws,
+  title   = {Scaling laws for neural language models},
+  author  = {Kaplan, Jared and McCandlish, Sam and Henighan, Tom and Brown, Tom B and Chess, Benjamin and Child, Rewon and Gray, Scott and Radford, Alec and Wu, Jeffrey and Amodei, Dario},
+  journal = {arXiv preprint arXiv:2001.08361},
+  year    = {2020}
+}
+
+@article{hoffmann2022computeoptimal,
+  title   = {Training compute-optimal large language models},
+  author  = {Hoffmann, Jordan and Borgeaud, Sebastian and Mensch, Arthur and Buchatskaya, Elena and Cai, Trevor and Rutherford, Eliza and Casas, Diego de Las and Hendricks, Lisa Anne and Welbl, Johannes and Clark, Aidan and others},
+  journal = {arXiv preprint arXiv:2203.15556},
+  year    = {2022}
+}
+
+@article{shoeybi2019megatron,
+  title   = {Megatron-lm: Training multi-billion parameter language models using model parallelism},
+  author  = {Shoeybi, Mohammad and Patwary, Mostofa and Puri, Raul and LeGresley, Patrick and Casper, Jared and Catanzaro, Bryan},
+  journal = {arXiv preprint arXiv:1909.08053},
+  year    = {2019}
+}
+
+@inproceedings{rajbhandari2020zero,
+  title        = {Zero: Memory optimizations toward training trillion parameter models},
+  author       = {Rajbhandari, Samyam and Rasley, Jeff and Ruwase, Olatunji and He, Yuxiong},
+  booktitle    = {SC20: International Conference for High Performance Computing, Networking, Storage and Analysis},
+  pages        = {1--16},
+  year         = {2020},
+  organization = {IEEE}
+}
+
+@inproceedings{rasley2020deepspeed,
+  title     = {Deepspeed: System optimizations enable training deep learning models with over 100 billion parameters},
+  author    = {Rasley, Jeff and Rajbhandari, Samyam and Ruwase, Olatunji and He, Yuxiong},
+  booktitle = {Proceedings of the 26th ACM SIGKDD international conference on knowledge discovery \& data mining},
+  pages     = {3505--3506},
+  year      = {2020}
+}
+
+@article{aminabadi2022deepspeedinference,
+  title        = {Deepspeed-inference: enabling efficient inference of transformer models at unprecedented scale},
+  author       = {Aminabadi, Reza Yazdani and Rajbhandari, Samyam and Awan, Ammar Ahmad and Li, Cheng and Li, Du and Zheng, Elton and Ruwase, Olatunji and Smith, Shaden and Zhang, Minjia and Rasley, Jeff and others},
+  booktitle    = {SC22: International Conference for High Performance Computing, Networking, Storage and Analysis},
+  pages        = {1--15},
+  year         = {2022},
+  organization = {IEEE}
+}
+
+@inproceedings{yu2022orca,
+  title     = {Orca: A distributed serving system for $\{$Transformer-Based$\}$ generative models},
+  author    = {Yu, Gyeong-In and Jeong, Joo Seong and Kim, Geon-Woo and Kim, Soojeong and Chun, Byung-Gon},
+  booktitle = {16th USENIX Symposium on Operating Systems Design and Implementation (OSDI 22)},
+  pages     = {521--538},
+  year      = {2022}
+}
+
+@article{kwon2023pagedattention,
+  author    = {Kwon, Woosuk and Li, Zhuohan and Zhuang, Siyuan and Sheng, Ying and Zheng, Lianmin and Yu, Cody Hao and Gonzalez, Joseph and Zhang, Hao and Stoica, Ion},
+  title     = {Efficient Memory Management for Large Language Model Serving with PagedAttention},
+  year      = {2023},
+  isbn      = {9798400702297},
+  publisher = {Association for Computing Machinery},
+  address   = {New York, NY, USA},
+  url       = {https://doi.org/10.1145/3600006.3613165},
+  doi       = {10.1145/3600006.3613165},
+  abstract  = {High throughput serving of large language models (LLMs) requires batching sufficiently many requests at a time. However, existing systems struggle because the key-value cache (KV cache) memory for each request is huge and grows and shrinks dynamically. When managed inefficiently, this memory can be significantly wasted by fragmentation and redundant duplication, limiting the batch size. To address this problem, we propose PagedAttention, an attention algorithm inspired by the classical virtual memory and paging techniques in operating systems. On top of it, we build vLLM, an LLM serving system that achieves (1) near-zero waste in KV cache memory and (2) flexible sharing of KV cache within and across requests to further reduce memory usage. Our evaluations show that vLLM improves the throughput of popular LLMs by 2--4\texttimes{} with the same level of latency compared to the state-of-the-art systems, such as FasterTransformer and Orca. The improvement is more pronounced with longer sequences, larger models, and more complex decoding algorithms. vLLM's source code is publicly available at https://github.com/vllm-project/vllm.},
+  booktitle = {Proceedings of the 29th Symposium on Operating Systems Principles},
+  pages     = {611-626},
+  numpages  = {16},
+  location  = {Koblenz, Germany},
+  series    = {SOSP '23}
+}
+
+@article{shazeer2017moe,
+  title   = {Outrageously large neural networks: The sparsely-gated mixture-of-experts layer},
+  author  = {Shazeer, Noam and Mirhoseini, Azalia and Maziarz, Krzysztof and Davis, Andy and Le, Quoc and Hinton, Geoffrey and Dean, Jeff},
+  journal = {arXiv preprint arXiv:1701.06538},
+  year    = {2017}
+}
+
+@article{lepikhin2020gshard,
+  title   = {Gshard: Scaling giant models with conditional computation and automatic sharding},
+  author  = {Lepikhin, Dmitry and Lee, HyoukJoong and Xu, Yuanzhong and Chen, Dehao and Firat, Orhan and Huang, Yanping and Krikun, Maxim and Shazeer, Noam and Chen, Zhifeng},
+  journal = {arXiv preprint arXiv:2006.16668},
+  year    = {2020}
+}
+
+@article{fedus2022switch,
+  title   = {Switch transformers: Scaling to trillion parameter models with simple and efficient sparsity},
+  author  = {Fedus, William and Zoph, Barret and Shazeer, Noam},
+  journal = {Journal of Machine Learning Research},
+  volume  = {23},
+  number  = {120},
+  pages   = {1--39},
+  year    = {2022}
+}
+
+@article{he2021fastmoe,
+  title   = {Fastmoe: A fast mixture-of-expert training system},
+  author  = {He, Jiaao and Qiu, Jiezhong and Zeng, Aohan and Yang, Zhilin and Zhai, Jidong and Tang, Jie},
+  journal = {arXiv preprint arXiv:2103.13262},
+  year    = {2021}
+}
+
+@article{hwang2023tutel,
+  title   = {Tutel: Adaptive mixture-of-experts at scale},
+  author  = {Hwang, Changho and Cui, Wei and Xiong, Yifan and Yang, Ziyue and Liu, Ze and Hu, Han and Wang, Zilong and Salas, Rafael and Jose, Jithin and Ram, Prabhat and others},
+  journal = {Proceedings of Machine Learning and Systems},
+  volume  = {5},
+  pages   = {269--287},
+  year    = {2023}
+}
+
+@article{hu2024demystifyingnccl,
+  title   = {Demystifying NCCL: An In-Depth Analysis of GPU Communication Protocols and Algorithms},
+  author  = {Zhiyi Hu and Siyuan Shen and Tommaso Bonato and Sylvain Jeaugey and Cedell Alexander and Eric Spada and James Dinan and Jeff Hammond and Torsten Hoefler},
+  journal = {2025 IEEE Symposium on High-Performance Interconnects (HOTI)},
+  year    = {2025},
+  pages   = {48-59},
+  url     = {https://api.semanticscholar.org/CorpusID:280048347}
+}
+
+@article{weingram2023xcclsurvey,
+  title   = {xCCL: A Survey of Industry-Led Collective Communication Libraries for Deep Learning},
+  author  = {Adam Weingram and Yuke Li and Hao Qi and Darren Ng and Liuyao Dai and Xiaoyi Lu},
+  journal = {Journal of Computer Science and Technology},
+  year    = {2023},
+  volume  = {38},
+  pages   = {166-195},
+  url     = {https://api.semanticscholar.org/CorpusID:257839221}
+}
+
+@article{sergeev2018horovod,
+  title   = {Horovod: fast and easy distributed deep learning in TensorFlow},
+  author  = {Alexander Sergeev and Mike Del Balso},
+  journal = {ArXiv},
+  year    = {2018},
+  volume  = {abs/1802.05799},
+  url     = {https://api.semanticscholar.org/CorpusID:3398835}
+}
+
+@inproceedings{wang2020blink,
+  author    = {Wang, Guanhua and Venkataraman, Shivaram and Phanishayee, Amar and Devanur, Nikhil and Thelin, Jorgen and Stoica, Ion},
+  booktitle = {Proceedings of Machine Learning and Systems},
+  editor    = {I. Dhillon and D. Papailiopoulos and V. Sze},
+  pages     = {172--186},
+  title     = {Blink: Fast and Generic Collectives for Distributed ML},
+  url       = {https://proceedings.mlsys.org/paper_files/paper/2020/file/cd3a9a55f7f3723133fa4a13628cdf03-Paper.pdf},
+  volume    = {2},
+  year      = {2020}
+}
+
+@misc{intel2024oneccl,
+  title        = {Intel oneAPI Collective Communications Library (oneCCL) Documentation},
+  author       = {Intel},
+  year         = {2024},
+  note         = {Intel Documentation, accessed 2025-12-26},
+  howpublished = {\url{https://www.intel.com/content/www/us/en/developer/tools/oneapi/oneccl.html}}
+}
+
+@misc{amd2025rccl,
+  title        = {ROCm Communication Collectives Library (RCCL) Documentation},
+  author       = {AMD},
+  year         = {2025},
+  note         = {ROCm Docs, accessed 2025-12-26},
+  howpublished = {\url{https://rocmdocs.amd.com/projects/rccl/en/latest/}}
+}
+@article{shamis2015ucx,
+  title   = {UCX: An Open Source Framework for HPC Network APIs and Beyond},
+  author  = {Pavel Shamis and Manjunath Gorentla Venkata and M Graham Lopez and Matthew B. Baker and Oscar R. Hernandez and Yossi Itigin and Mike Dubman and Gilad Shainer and Richard L. Graham and Liran Liss and Yiftah Shahar and Mellanox Technologies and Sreeram Potluri and Davide Rossetti and Donald Becker and Duncan Poole and Christopher Lamb and Sameer Kumar and Craig B. Stunkel and George Bosilca and Aur{\'e}lien Bouteiller},
+  journal = {2015 IEEE 23rd Annual Symposium on High-Performance Interconnects},
+  year    = {2015},
+  pages   = {40-43},
+  url     = {https://api.semanticscholar.org/CorpusID:15710374}
+}
+
+@article{papadopoulou2017ucxib,
+  title   = {A Performance Study of UCX over InfiniBand},
+  author  = {Nikela Papadopoulou and Lena Oden and Pavan Balaji},
+  journal = {2017 17th IEEE/ACM International Symposium on Cluster, Cloud and Grid Computing (CCGRID)},
+  year    = {2017},
+  pages   = {345-354},
+  url     = {https://api.semanticscholar.org/CorpusID:1376678}
+}
+
+@techreport{mpiforum2024mpi41,
+  title       = {MPI: A Message-Passing Interface Standard, Version 4.1},
+  author      = {MPI Forum},
+  year        = {2024},
+  institution = {MPI Forum Standard},
+  url         = {https://www.mpi-forum.org/docs/mpi-4.1/mpi41-report.pdf}
+}
+
+@inproceedings{sur2006rdmaread,
+  title     = {RDMA read based rendezvous protocol for MPI over InfiniBand: design alternatives and benefits},
+  author    = {Sayantan Sur and Hyun-Wook Jin and Lei Chai and Dhabaleswar Kumar Panda},
+  booktitle = {ACM SIGPLAN Symposium on Principles \& Practice of Parallel Programming},
+  year      = {2006},
+  url       = {https://api.semanticscholar.org/CorpusID:9250769}
+}
+
+@techreport{nvidia2025gpudirectrdma,
+  title       = {GPUDirect RDMA},
+  author      = {NVIDIA},
+  year        = {2025},
+  institution = {NVIDIA CUDA Documentation},
+  url         = {https://docs.nvidia.com/cuda/pdf/GPUDirect_RDMA.pdf},
+  note        = {accessed 2025-12-26}
+}
+
+@article{agostini2018gpudirectasync,
+  title   = {GPUDirect Async: Exploring GPU synchronous communication techniques for InfiniBand clusters},
+  author  = {Elena Agostini and Davide Rossetti and Sreeram Potluri},
+  journal = {J. Parallel Distributed Comput.},
+  year    = {2018},
+  volume  = {114},
+  pages   = {28-45},
+  url     = {https://api.semanticscholar.org/CorpusID:4650454}
+}
+
+@misc{nvidia2025cudipc,
+  title        = {CUDA Interprocess Communication (IPC)},
+  author       = {NVIDIA},
+  year         = {2025},
+  note         = {CUDA Programming Guide, accessed 2025-12-26},
+  howpublished = {\url{https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/inter-process-communication.html}}
+}
+
+@article{maltenberger2022sortinginterconnects,
+  title   = {Evaluating Multi-GPU Sorting with Modern Interconnects},
+  author  = {Tobias Maltenberger and Ivan Ilic and Ilin Tolovski and Tilmann Rabl},
+  journal = {Proceedings of the 2022 International Conference on Management of Data},
+  year    = {2022},
+  url     = {https://api.semanticscholar.org/CorpusID:249578819}
+}
+
+@inproceedings{devlin2019bert,
+  title     = {BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding},
+  author    = {Jacob Devlin and Ming-Wei Chang and Kenton Lee and Kristina Toutanova},
+  booktitle = {North American Chapter of the Association for Computational Linguistics},
+  year      = {2019},
+  url       = {https://api.semanticscholar.org/CorpusID:52967399}
+}
+
+@misc{nvidia2025fastertransformer,
+  title        = {FasterTransformer},
+  author       = {NVIDIA},
+  year         = {2025},
+  note         = {GitHub repository, accessed 2025-12-26},
+  howpublished = {\url{https://github.com/NVIDIA/FasterTransformer}}
+}
+
+@misc{nvidia2025nvshmem,
+  title        = {NVSHMEM Documentation},
+  author       = {NVIDIA},
+  year         = {2025},
+  note         = {NVIDIA NVSHMEM Docs, accessed 2025-12-26},
+  howpublished = {\url{https://docs.nvidia.com/nvshmem/api/index.html}}
+}
+
+@techreport{openshmem2020,
+  title       = {OpenSHMEM Application Programming Interface, Version 1.5},
+  author      = {OpenSHMEM},
+  year        = {2020},
+  institution = {OpenSHMEM Org},
+  url         = {http://openshmem.org/site/sites/default/site_files/OpenSHMEM-1.5.pdf}
+}
+
+@misc{ucx2025tagapi,
+  title        = {UCX UCT Tag Matching API Documentation},
+  author       = {UCX Project},
+  year         = {2025},
+  note         = {openucx.github.io API docs, accessed 2025-12-26},
+  howpublished = {\url{https://openucx.github.io/ucx/api/latest/html/group___u_c_t___t_a_g.html}}
+}
+
+@inproceedings{rashti2008mpi_overlap,
+  author    = {Rashti, Mohammad J. and Afsahi, Ahmad},
+  booktitle = {2008 22nd International Symposium on High Performance Computing Systems and Applications},
+  title     = {Improving Communication Progress and Overlap in MPI Rendezvous Protocol over RDMA-enabled Interconnects},
+  year      = {2008},
+  volume    = {},
+  number    = {},
+  pages     = {95-101},
+  keywords  = {Protocols;High performance computing;Delay;Ethernet networks;Engines;Application software;Message passing;Libraries;Concurrent computing;Costs;MPI;Rendezvous Protocol;RDMA;Communication Progress;Overlap;High-performance Interconnects},
+  doi       = {10.1109/HPCS.2008.10}
+}
+
+@article{parekh1993gps,
+  author     = {Parekh, Abhay K. and Gallager, Robert G.},
+  title      = {A generalized processor sharing approach to flow control in integrated services networks: the single-node case},
+  year       = {1993},
+  issue_date = {June 1993},
+  publisher  = {IEEE Press},
+  volume     = {1},
+  number     = {3},
+  issn       = {1063-6692},
+  url        = {https://doi.org/10.1109/90.234856},
+  doi        = {10.1109/90.234856},
+  journal    = {IEEE/ACM Trans. Netw.},
+  month      = jun,
+  pages      = {344-357},
+  numpages   = {14}
+}
+
+@article{shah2025msccpp,
+  title   = {MSCCL++: Rethinking GPU Communication Abstractions for Cutting-edge AI Applications},
+  author  = {Aashaka Shah and Abhinav Jangda and Binyang Li and Caio Rocha and Changho Hwang and Jithin Jose and Madan Musuvathi and Olli Saarikivi and Peng Cheng and Qinghua Zhou and Roshan Dathathri and Saeed Maleki and Ziyue Yang},
+  journal = {ArXiv},
+  year    = {2025},
+  volume  = {abs/2504.09014},
+  url     = {https://api.semanticscholar.org/CorpusID:277781058}
+}
+
+@article{chen2025iccl,
+  title   = {An Efficient, Reliable and Observable Collective Communication Library in Large-scale GPU Training Clusters},
+  author  = {Ziteng Chen and Xiaohe Hu and Menghao Zhang and Yanmin Jia and Yan Zhang and Mingjun Zhang and Da Liu and Fangzheng Jiao and Jun Chen and He Liu and Aohan Zeng and Shuaixing Duan and Ruya Gu and Yang Jing and Bowen Han and Jiahao Cao and Wei Chen and Wenqi Xie and Jinlong Hou and Yuan Cheng and Bohua Xu and Mingwei Xu and Chunming Hu},
+  journal = {ArXiv},
+  year    = {2025},
+  volume  = {abs/2510.00991},
+  url     = {https://api.semanticscholar.org/CorpusID:281706430}
+}
+
+@article{mpiprogress2024,
+  title   = {MPI Progress For All},
+  author  = {Hui Zhou and Robert Latham and Kenneth Raffenetti and Yanfei Guo and Rajeev Thakur},
+  journal = {SC24-W: Workshops of the International Conference for High Performance Computing, Networking, Storage and Analysis},
+  year    = {2024},
+  pages   = {425-435},
+  url     = {https://api.semanticscholar.org/CorpusID:269983572}
+}
+
+@inproceedings{zhai2023smartmoe,
+  author    = {Mingshu Zhai and Jiaao He and Zixuan Ma and Zan Zong and Runqing Zhang and Jidong Zhai},
+  title     = {{SmartMoE}: Efficiently Training {Sparsely-Activated} Models through Combining Offline and Online Parallelization},
+  booktitle = {2023 USENIX Annual Technical Conference (USENIX ATC 23)},
+  year      = {2023},
+  isbn      = {978-1-939133-35-9},
+  address   = {Boston, MA},
+  pages     = {961--975},
+  url       = {https://www.usenix.org/conference/atc23/presentation/zhai},
+  publisher = {USENIX Association},
+  month     = jul
+}
+
+@article{temucin2022interconnectawareucx,
+  author   = {Temuçin, Yiltan Hassan and Sojoodi, Amir Hossein and Alizadeh, Pedram and Kitor, Benjamin and Afsahi, Ahmad},
+  journal  = {IEEE Micro},
+  title    = {Accelerating Deep Learning Using Interconnect-Aware UCX Communication for MPI Collectives},
+  year     = {2022},
+  volume   = {42},
+  number   = {2},
+  pages    = {68-76},
+  keywords = {Graphics processing units;Bandwidth;Deep learning;Data transfer;Message passing;Graphics processing units;Runtime;Communication channels},
+  doi      = {10.1109/MM.2022.3148670}
+}
+
+@misc{nvidia2025gdrdoc,
+  title        = {GPUDirect RDMA Documentation},
+  author       = {NVIDIA},
+  year         = {2025},
+  howpublished = {\url{https://docs.nvidia.com/cuda/gpudirect-rdma/}}
+}
+
+@techreport{nvidia2025gds,
+  title       = {GPUDirect Storage Overview Guide},
+  author      = {NVIDIA},
+  year        = {2025},
+  institution = {NVIDIA Magnum IO},
+  url         = {https://docs.nvidia.com/gpudirect-storage/overview-guide/index.html}
+}
+
+@article{watanabe2024ucx_tofu,
+  author     = {Watanabe, Yutaka and Tsuji, Miwako and Murai, Hitoshi and Boku, Taisuke and Sato, Mitsuhisa},
+  title      = {Design and performance evaluation of UCX for the Tofu Interconnect D on Fugaku towards efficient multithreaded communication},
+  year       = {2024},
+  issue_date = {Sep 2024},
+  publisher  = {Kluwer Academic Publishers},
+  address    = {USA},
+  volume     = {80},
+  number     = {14},
+  issn       = {0920-8542},
+  url        = {https://doi.org/10.1007/s11227-024-06201-x},
+  doi        = {10.1007/s11227-024-06201-x},
+  abstract   = {The increasing trend of manycore processors makes multithreaded communication more important to avoid costly global synchronization among cores. One of the representative approaches that require multithreaded communication is the global task-based programming model. In the model, a program is divided into tasks, and tasks are asynchronously executed by each node, and independent thread-to-thread communications are expected. However, the Message passing interface (MPI) based approach is not efficient because of design issues. In this research, we design and implement the utofu transport layer in an abstracted communication library called Unified communication-X (UCX) for efficient remote direct memory access (RDMA) based multithreaded communication on Tofu Interconnect D. The evaluation results on Fugaku show that UCX can significantly improve the multithreaded performance over MPI, while maintaining portability between systems thanks to UCX. UCX shows about 32.8 times lower latency than Fujitsu MPI with 24 threads in the multithreaded pingpong benchmark and about 37.8 times higher update rate than Fujitsu MPI with 24 threads on 256 nodes in multithreaded GUPs benchmark.},
+  journal    = {J. Supercomput.},
+  month      = jun,
+  pages      = {20715–20742},
+  numpages   = {28},
+  keywords   = {Supercomputer Fugaku, A64FX, Tofu Interconnect D, UCX, Multithreaded communication, One-sided communication}
+}
+
+@inproceedings{mpiucx2024multipath,
+  author    = {Sojoodi, Amirhossein and Temucin, Yiltan H. and Afsahi, Ahmad},
+  title     = {Enhancing Intra-Node GPU-to-GPU Performance in MPI+UCX through Multi-Path Communication},
+  year      = {2024},
+  isbn      = {9798400705373},
+  publisher = {Association for Computing Machinery},
+  address   = {New York, NY, USA},
+  url       = {https://dl.acm.org/doi/10.1145/3642961.3643800},
+  doi       = {10.1145/3642961.3643800},
+  abstract  = {Efficient communication among GPUs is crucial for achieving high performance in modern GPU-accelerated applications. This paper introduces a multi-path communication framework within the MPI+UCX library to enhance P2P communication performance between intra-node GPUs, by concurrently leveraging multiple paths, including available NVLinks and PCIe through the host. Through extensive experiments, we demonstrate significant performance gains achieved by our approach, surpassing baseline P2P communication methods. More specifically, in a 4-GPU node, multi-path P2P improves UCX Put bandwidth by up to 2.85x when utilizing the host path and 2 other GPU paths. Furthermore, we demonstrate the effectiveness of our approach in accelerating the Jacobi iterative solver, achieving up to 1.27x runtime speedup.},
+  booktitle = {Proceedings of the 3rd International Workshop on Extreme Heterogeneity Solutions},
+  pages     = {9-14},
+  numpages  = {6},
+  keywords  = {GPU, MPI, Multi-Path Communication, NVLink, P2P, PCIe, UCX},
+  location  = {Edinburgh, United Kingdom},
+  series    = {ExHET '24}
+}
+
+# user checked references:
+
+@misc{huang2019gpipe,
+  title         = {GPipe: Efficient Training of Giant Neural Networks using Pipeline Parallelism},
+  author        = {Yanping Huang and Youlong Cheng and Ankur Bapna and Orhan Firat and Mia Xu Chen and Dehao Chen and HyoukJoong Lee and Jiquan Ngiam and Quoc V. Le and Yonghui Wu and Zhifeng Chen},
+  year          = {2019},
+  eprint        = {1811.06965},
+  archiveprefix = {arXiv},
+  primaryclass  = {cs.CV},
+  url           = {https://arxiv.org/abs/1811.06965}
+}
+
+@misc{flash_attention_paper,
+  title         = {FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness},
+  author        = {Tri Dao and Daniel Y. Fu and Stefano Ermon and Atri Rudra and Christopher Ré},
+  year          = {2022},
+  eprint        = {2205.14135},
+  archiveprefix = {arXiv},
+  primaryclass  = {cs.LG},
+  url           = {https://arxiv.org/abs/2205.14135}
+}
+
+@misc{flash_attention2_paper,
+  title         = {FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning},
+  author        = {Tri Dao},
+  year          = {2023},
+  eprint        = {2307.08691},
+  archiveprefix = {arXiv},
+  primaryclass  = {cs.LG},
+  url           = {https://arxiv.org/abs/2307.08691}
+}
+
+@misc{flash_attention3_paper,
+  title         = {FlashAttention-3: Fast and Accurate Attention with Asynchrony and Low-precision},
+  author        = {Jay Shah and Ganesh Bikshandi and Ying Zhang and Vijay Thakkar and Pradeep Ramani and Tri Dao},
+  year          = {2024},
+  eprint        = {2407.08608},
+  archiveprefix = {arXiv},
+  primaryclass  = {cs.LG},
+  url           = {https://arxiv.org/abs/2407.08608}
+}
+
+@misc{deepseekv3_tech_report,
+  title         = {DeepSeek-V3 Technical Report},
+  author        = {DeepSeek-AI and Aixin Liu and Bei Feng and Bing Xue and Bingxuan Wang and Bochao Wu and Chengda Lu and Chenggang Zhao and Chengqi Deng and Chenyu Zhang and Chong Ruan and Damai Dai and Daya Guo and Dejian Yang and Deli Chen and Dongjie Ji and Erhang Li and Fangyun Lin and Fucong Dai and Fuli Luo and Guangbo Hao and Guanting Chen and Guowei Li and H. Zhang and Han Bao and Hanwei Xu and Haocheng Wang and Haowei Zhang and Honghui Ding and Huajian Xin and Huazuo Gao and Hui Li and Hui Qu and J. L. Cai and Jian Liang and Jianzhong Guo and Jiaqi Ni and Jiashi Li and Jiawei Wang and Jin Chen and Jingchang Chen and Jingyang Yuan and Junjie Qiu and Junlong Li and Junxiao Song and Kai Dong and Kai Hu and Kaige Gao and Kang Guan and Kexin Huang and Kuai Yu and Lean Wang and Lecong Zhang and Lei Xu and Leyi Xia and Liang Zhao and Litong Wang and Liyue Zhang and Meng Li and Miaojun Wang and Mingchuan Zhang and Minghua Zhang and Minghui Tang and Mingming Li and Ning Tian and Panpan Huang and Peiyi Wang and Peng Zhang and Qiancheng Wang and Qihao Zhu and Qinyu Chen and Qiushi Du and R. J. Chen and R. L. Jin and Ruiqi Ge and Ruisong Zhang and Ruizhe Pan and Runji Wang and Runxin Xu and Ruoyu Zhang and Ruyi Chen and S. S. Li and Shanghao Lu and Shangyan Zhou and Shanhuang Chen and Shaoqing Wu and Shengfeng Ye and Shengfeng Ye and Shirong Ma and Shiyu Wang and Shuang Zhou and Shuiping Yu and Shunfeng Zhou and Shuting Pan and T. Wang and Tao Yun and Tian Pei and Tianyu Sun and W. L. Xiao and Wangding Zeng and Wanjia Zhao and Wei An and Wen Liu and Wenfeng Liang and Wenjun Gao and Wenqin Yu and Wentao Zhang and X. Q. Li and Xiangyue Jin and Xianzu Wang and Xiao Bi and Xiaodong Liu and Xiaohan Wang and Xiaojin Shen and Xiaokang Chen and Xiaokang Zhang and Xiaosha Chen and Xiaotao Nie and Xiaowen Sun and Xiaoxiang Wang and Xin Cheng and Xin Liu and Xin Xie and Xingchao Liu and Xingkai Yu and Xinnan Song and Xinxia Shan and Xinyi Zhou and Xinyu Yang and Xinyuan Li and Xuecheng Su and Xuheng Lin and Y. K. Li and Y. Q. Wang and Y. X. Wei and Y. X. Zhu and Yang Zhang and Yanhong Xu and Yanhong Xu and Yanping Huang and Yao Li and Yao Zhao and Yaofeng Sun and Yaohui Li and Yaohui Wang and Yi Yu and Yi Zheng and Yichao Zhang and Yifan Shi and Yiliang Xiong and Ying He and Ying Tang and Yishi Piao and Yisong Wang and Yixuan Tan and Yiyang Ma and Yiyuan Liu and Yongqiang Guo and Yu Wu and Yuan Ou and Yuchen Zhu and Yuduan Wang and Yue Gong and Yuheng Zou and Yujia He and Yukun Zha and Yunfan Xiong and Yunxian Ma and Yuting Yan and Yuxiang Luo and Yuxiang You and Yuxuan Liu and Yuyang Zhou and Z. F. Wu and Z. Z. Ren and Zehui Ren and Zhangli Sha and Zhe Fu and Zhean Xu and Zhen Huang and Zhen Zhang and Zhenda Xie and Zhengyan Zhang and Zhewen Hao and Zhibin Gou and Zhicheng Ma and Zhigang Yan and Zhihong Shao and Zhipeng Xu and Zhiyu Wu and Zhongyu Zhang and Zhuoshu Li and Zihui Gu and Zijia Zhu and Zijun Liu and Zilin Li and Ziwei Xie and Ziyang Song and Ziyi Gao and Zizheng Pan},
+  year          = {2025},
+  eprint        = {2412.19437},
+  archiveprefix = {arXiv},
+  primaryclass  = {cs.CL},
+  url           = {https://arxiv.org/abs/2412.19437}
+}
+
+@misc{deepseekr1_tech_report,
+  title         = {DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning},
+  author        = {DeepSeek-AI and Daya Guo and Dejian Yang and Haowei Zhang and Junxiao Song and Ruoyu Zhang and Runxin Xu and Qihao Zhu and Shirong Ma and Peiyi Wang and Xiao Bi and Xiaokang Zhang and Xingkai Yu and Yu Wu and Z. F. Wu and Zhibin Gou and Zhihong Shao and Zhuoshu Li and Ziyi Gao and Aixin Liu and Bing Xue and Bingxuan Wang and Bochao Wu and Bei Feng and Chengda Lu and Chenggang Zhao and Chengqi Deng and Chenyu Zhang and Chong Ruan and Damai Dai and Deli Chen and Dongjie Ji and Erhang Li and Fangyun Lin and Fucong Dai and Fuli Luo and Guangbo Hao and Guanting Chen and Guowei Li and H. Zhang and Han Bao and Hanwei Xu and Haocheng Wang and Honghui Ding and Huajian Xin and Huazuo Gao and Hui Qu and Hui Li and Jianzhong Guo and Jiashi Li and Jiawei Wang and Jingchang Chen and Jingyang Yuan and Junjie Qiu and Junlong Li and J. L. Cai and Jiaqi Ni and Jian Liang and Jin Chen and Kai Dong and Kai Hu and Kaige Gao and Kang Guan and Kexin Huang and Kuai Yu and Lean Wang and Lecong Zhang and Liang Zhao and Litong Wang and Liyue Zhang and Lei Xu and Leyi Xia and Mingchuan Zhang and Minghua Zhang and Minghui Tang and Meng Li and Miaojun Wang and Mingming Li and Ning Tian and Panpan Huang and Peng Zhang and Qiancheng Wang and Qinyu Chen and Qiushi Du and Ruiqi Ge and Ruisong Zhang and Ruizhe Pan and Runji Wang and R. J. Chen and R. L. Jin and Ruyi Chen and Shanghao Lu and Shangyan Zhou and Shanhuang Chen and Shengfeng Ye and Shiyu Wang and Shuiping Yu and Shunfeng Zhou and Shuting Pan and S. S. Li and Shuang Zhou and Shaoqing Wu and Shengfeng Ye and Tao Yun and Tian Pei and Tianyu Sun and T. Wang and Wangding Zeng and Wanjia Zhao and Wen Liu and Wenfeng Liang and Wenjun Gao and Wenqin Yu and Wentao Zhang and W. L. Xiao and Wei An and Xiaodong Liu and Xiaohan Wang and Xiaokang Chen and Xiaotao Nie and Xin Cheng and Xin Liu and Xin Xie and Xingchao Liu and Xinyu Yang and Xinyuan Li and Xuecheng Su and Xuheng Lin and X. Q. Li and Xiangyue Jin and Xiaojin Shen and Xiaosha Chen and Xiaowen Sun and Xiaoxiang Wang and Xinnan Song and Xinyi Zhou and Xianzu Wang and Xinxia Shan and Y. K. Li and Y. Q. Wang and Y. X. Wei and Yang Zhang and Yanhong Xu and Yao Li and Yao Zhao and Yaofeng Sun and Yaohui Wang and Yi Yu and Yichao Zhang and Yifan Shi and Yiliang Xiong and Ying He and Yishi Piao and Yisong Wang and Yixuan Tan and Yiyang Ma and Yiyuan Liu and Yongqiang Guo and Yuan Ou and Yuduan Wang and Yue Gong and Yuheng Zou and Yujia He and Yunfan Xiong and Yuxiang Luo and Yuxiang You and Yuxuan Liu and Yuyang Zhou and Y. X. Zhu and Yanhong Xu and Yanping Huang and Yaohui Li and Yi Zheng and Yuchen Zhu and Yunxian Ma and Ying Tang and Yukun Zha and Yuting Yan and Z. Z. Ren and Zehui Ren and Zhangli Sha and Zhe Fu and Zhean Xu and Zhenda Xie and Zhengyan Zhang and Zhewen Hao and Zhicheng Ma and Zhigang Yan and Zhiyu Wu and Zihui Gu and Zijia Zhu and Zijun Liu and Zilin Li and Ziwei Xie and Ziyang Song and Zizheng Pan and Zhen Huang and Zhipeng Xu and Zhongyu Zhang and Zhen Zhang},
+  year          = {2025},
+  eprint        = {2501.12948},
+  archiveprefix = {arXiv},
+  primaryclass  = {cs.CL},
+  url           = {https://arxiv.org/abs/2501.12948}
+}
+
+@misc{qwen3_tech_report,
+  title         = {Qwen3 Technical Report},
+  author        = {An Yang and Anfeng Li and Baosong Yang and Beichen Zhang and Binyuan Hui and Bo Zheng and Bowen Yu and Chang Gao and Chengen Huang and Chenxu Lv and Chujie Zheng and Dayiheng Liu and Fan Zhou and Fei Huang and Feng Hu and Hao Ge and Haoran Wei and Huan Lin and Jialong Tang and Jian Yang and Jianhong Tu and Jianwei Zhang and Jianxin Yang and Jiaxi Yang and Jing Zhou and Jingren Zhou and Junyang Lin and Kai Dang and Keqin Bao and Kexin Yang and Le Yu and Lianghao Deng and Mei Li and Mingfeng Xue and Mingze Li and Pei Zhang and Peng Wang and Qin Zhu and Rui Men and Ruize Gao and Shixuan Liu and Shuang Luo and Tianhao Li and Tianyi Tang and Wenbiao Yin and Xingzhang Ren and Xinyu Wang and Xinyu Zhang and Xuancheng Ren and Yang Fan and Yang Su and Yichang Zhang and Yinger Zhang and Yu Wan and Yuqiong Liu and Zekun Wang and Zeyu Cui and Zhenru Zhang and Zhipeng Zhou and Zihan Qiu},
+  year          = {2025},
+  eprint        = {2505.09388},
+  archiveprefix = {arXiv},
+  primaryclass  = {cs.CL},
+  url           = {https://arxiv.org/abs/2505.09388}
+}
+
+@inproceedings{splitwise_paper,
+  author    = {Patel, Pratyush and Choukse, Esha and Zhang, Chaojie and Shah, Aashaka and Goiri, \'{I}\~{n}igo and Maleki, Saeed and Bianchini, Ricardo},
+  title     = {Splitwise: Efficient Generative LLM Inference Using Phase Splitting},
+  year      = {2025},
+  isbn      = {9798350326581},
+  publisher = {IEEE Press},
+  url       = {https://doi.org/10.1109/ISCA59077.2024.00019},
+  doi       = {10.1109/ISCA59077.2024.00019},
+  abstract  = {Generative large language model (LLM) applications are growing rapidly, leading to large-scale deployments of expensive and power-hungry GPUs. Our characterization of LLM inference shows that each inference request undergoes two phases: a compute-intensive prompt computation phase and a memoryintensive token generation phase, each with distinct latency, throughput, memory, and power characteristics. Despite state-of-the-art batching and scheduling, the token generation phase underutilizes compute resources. Unlike prompt computation, token generation does not need the compute capability of the latest GPUs and can be run with lower power and cost.Based on these insights, we propose Splitwise, a model deployment and scheduling technique that splits the two phases of LLM inference requests on to separate machines. Splitwise enables phase-specific resource management using hardware that is well suited for each phase. Request state is transferred efficiently between machines using optimized network libraries on the fast back-plane interconnects available in today's GPU clusters. Using Splitwise, we design homogeneous and heterogeneous LLM inference clusters optimized for throughput, cost, and power. Compared to current designs, Splitwise clusters achieve up to 1.4\texttimes{} higher throughput at 20\% lower cost. Alternatively, they can deliver 2.35\texttimes{} more throughput under the same power and cost budgets.},
+  booktitle = {Proceedings of the 51st Annual International Symposium on Computer Architecture},
+  pages     = {118-132},
+  numpages  = {15},
+  location  = {Buenos Aires, Argentina},
+  series    = {ISCA '24}
+}
+
+@inproceedings{distserve_paper,
+  author    = {Yinmin Zhong and Shengyu Liu and Junda Chen and Jianbo Hu and Yibo Zhu and Xuanzhe Liu and Xin Jin and Hao Zhang},
+  title     = {{DistServe}: Disaggregating Prefill and Decoding for Goodput-optimized Large Language Model Serving},
+  booktitle = {18th USENIX Symposium on Operating Systems Design and Implementation (OSDI 24)},
+  year      = {2024},
+  isbn      = {978-1-939133-40-3},
+  address   = {Santa Clara, CA},
+  pages     = {193--210},
+  url       = {https://www.usenix.org/conference/osdi24/presentation/zhong-yinmin},
+  publisher = {USENIX Association},
+  month     = jul
+}
+
+@inproceedings{serverlessllm_paper,
+  author    = {Yao Fu and Leyang Xue and Yeqi Huang and Andrei-Octavian Brabete and Dmitrii Ustiugov and Yuvraj Patel and Luo Mai},
+  title     = {{ServerlessLLM}: {Low-Latency} Serverless Inference for Large Language Models},
+  booktitle = {18th USENIX Symposium on Operating Systems Design and Implementation (OSDI 24)},
+  year      = {2024},
+  isbn      = {978-1-939133-40-3},
+  address   = {Santa Clara, CA},
+  pages     = {135--153},
+  url       = {https://www.usenix.org/conference/osdi24/presentation/fu},
+  publisher = {USENIX Association},
+  month     = jul
+}
+
+@inproceedings{blitzscale_paper,
+  author    = {Dingyan Zhang and Haotian Wang and Yang Liu and and Xingda Wei and Yizhou Shan and Rong Chen and Haibo Chen},
+  title     = {{BlitzScale}: Fast and Live Large Model Autoscaling with O(1) Host Caching},
+  booktitle = {19th USENIX Symposium on Operating Systems Design and Implementation (OSDI 25)},
+  year      = {2025},
+  isbn      = {978-1-939133-47-2},
+  address   = {Boston, MA, USA},
+  url       = {https://www.usenix.org/conference/osdi25/presentation/zhang-dingyan},
+  publisher = {USENIX Association},
+  month     = jul
+}
+
+@inproceedings{mooncake_paper,
+  author    = {Ruoyu Qin and Zheming Li and Weiran He and Jialei Cui and Feng Ren and Mingxing Zhang and Yongwei Wu and Weimin Zheng and Xinran Xu},
+  title     = {Mooncake: Trading More Storage for Less Computation {\textemdash} A {KVCache-centric} Architecture for Serving {LLM} Chatbot},
+  booktitle = {23rd USENIX Conference on File and Storage Technologies (FAST 25)},
+  year      = {2025},
+  isbn      = {978-1-939133-45-8},
+  address   = {Santa Clara, CA},
+  pages     = {155--170},
+  url       = {https://www.usenix.org/conference/fast25/presentation/qin},
+  publisher = {USENIX Association},
+  month     = feb
+}
+
+@misc{DeepEP_repo,
+  author       = {DeepSeek AI},
+  title        = {{DeepEP}},
+  howpublished = {\url{https://github.com/deepseek-ai/DeepEP}},
+  note         = {Version v1.2.1 (commit 9af0e0d), accessed 2025-12-27},
+  year         = {2025}
+}
+
+@misc{flash-attention_repo,
+  author       = {Dao-AILab},
+  title        = {{flash-attention}},
+  howpublished = {\url{https://github.com/Dao-AILab/flash-attention}},
+  note         = {Version v2.8.3 (commit 060c918), accessed 2025-12-27},
+  year         = {2025}
+}
+
+@misc{flashinfer_repo,
+  author       = {flashinfer-ai},
+  title        = {{flashinfer}},
+  howpublished = {\url{https://github.com/flashinfer-ai/flashinfer}},
+  note         = {Version v0.5.3 (commit 421433e), accessed 2025-12-27},
+  year         = {2025}
+}
+
+@misc{uccl_repo,
+  author       = {uccl-project},
+  title        = {{uccl}},
+  howpublished = {\url{https://github.com/uccl-project/uccl}},
+  note         = {Latest commit, accessed 2025-12-27},
+  year         = {2025}
+}
+
+@misc{gloo_repo,
+  author       = {PyTorch},
+  title        = {{gloo}},
+  howpublished = {\url{https://github.com/pytorch/gloo}},
+  note         = {Latest commit, accessed 2025-12-27},
+  year         = {2024}
+}
+
+@misc{TransformerEngine_repo,
+  author       = {NVIDIA},
+  title        = {{TransformerEngine}},
+  howpublished = {\url{https://github.com/NVIDIA/TransformerEngine}},
+  note         = {Version v1.5 (commit a7d4c11), accessed 2025-12-27},
+  year         = {2025}
+}
+
+@misc{nvshmem_repo,
+  author       = {NVIDIA},
+  title        = {{nvshmem}},
+  howpublished = {\url{https://github.com/NVIDIA/nvshmem}},
+  note         = {Version v2.11.0 (commit 4c2b8f6), accessed 2025-12-27},
+  year         = {2024}
+}
+
+@misc{nccl_repo,
+  author       = {NVIDIA},
+  title        = {{nccl}},
+  howpublished = {\url{https://github.com/NVIDIA/nccl/tree/v2.25.1-1}},
+  note         = {Version v2.25.1-1 (commit corresponding to tag), accessed 2025-12-27},
+  year         = {2025}
+}
+
+@article{uccl_paper,
+  title   = {An Extensible Software Transport Layer for GPU Networking},
+  author  = {Zhou, Yang and Chen, Zhongjie and Mao, Ziming and Lao, ChonLam and Yang, Shuo and Kannan, Pravein Govindan and Gao, Jiaqi and Zhao, Yilong and Wu, Yongji and You, Kaichao and Ren, Fengyuan and Xu, Zhiying and Raiciu, Costin and Stoica, Ion},
+  journal = {arXiv preprint arXiv:2504.17307},
+  year    = {2025}
+}
+
+@misc{Mooncake_repo,
+  author       = {kvcache-ai},
+  title        = {{Mooncake}},
+  howpublished = {\url{https://github.com/kvcache-ai/Mooncake}},
+  note         = {Version v0.2.0 (commit 8c1d9ef), accessed 2025-12-27},
+  year         = {2025}
+}
+
+@misc{Qwen3-235B-A22B_model,
+  author       = {QwenLM},
+  title        = {{Qwen3-235B-A22B}},
+  howpublished = {\url{https://huggingface.co/Qwen/Qwen3-235B-A22B}},
+  note         = {Hugging Face model card, accessed 2025-12-27},
+  year         = {2025}
+}
+
+@misc{Qwen3-32B_model,
+  author       = {QwenLM},
+  title        = {{Qwen3-32B}},
+  howpublished = {\url{https://huggingface.co/Qwen/Qwen3-32B}},
+  note         = {Hugging Face model card, accessed 2025-12-27},
+  year         = {2025}
+}
+
+@misc{DeepSeek-R1_model,
+  author       = {deepseek-ai},
+  title        = {{DeepSeek-R1}},
+  howpublished = {\url{https://huggingface.co/deepseek-ai/DeepSeek-R1}},
+  note         = {Hugging Face model card, accessed 2025-12-27},
+  year         = {2025}
+}
+
+@misc{DeepSeek-V3_model,
+  author       = {deepseek-ai},
+  title        = {{DeepSeek-V3}},
+  howpublished = {\url{https://huggingface.co/deepseek-ai/DeepSeek-V3}},
+  note         = {Hugging Face model card, accessed 2025-12-27},
+  year         = {2025}
+}
+
+@misc{GPT-5_model,
+  author       = {OpenAI},
+  title        = {{GPT-5}},
+  howpublished = {Closed-source large language model},
+  note         = {Accessed via API, accessed 2025-12-27},
+  year         = {2025}
+}
+
+@misc{Gemini-3_model,
+  author       = {Google DeepMind},
+  title        = {{Gemini 3}},
+  howpublished = {Closed-source large language model},
+  note         = {Accessed via API, accessed 2025-12-27},
+  year         = {2025}
+}
+
+@article{gpt2_paper,
+  title   = {Language models are unsupervised multitask learners},
+  author  = {Radford, Alec and Wu, Jeffrey and Child, Rewon and Luan, David and Amodei, Dario and Sutskever, Ilya and others},
+  journal = {OpenAI blog},
+  volume  = {1},
+  number  = {8},
+  pages   = {9},
+  year    = {2019}
+}
+
+@misc{nvidia_a100_datasheet,
+  title        = {NVIDIA A100 Tensor Core GPU Datasheet},
+  author       = {{NVIDIA}},
+  howpublished = {\url{https://www.nvidia.com/content/dam/en-zz/Solutions/Data-Center/a100/pdf/nvidia-a100-datasheet-nvidia-us-2188504-web.pdf}},
+  note         = {Accessed: 2025-12-27}
+}
+
+@misc{nvidia_hopper_architecture_blog,
+  title        = {NVIDIA Hopper Architecture In-Depth},
+  author       = {Michael Anderson and Greg Palmer and Ronny Krashinsky and Nick Stam and Vishal Mehta and Gonzalo Brito and Sridhar Ramaswamy},
+  year         = {2022},
+  howpublished = {\url{https://developer.nvidia.com/blog/nvidia-hopper-architecture-in-depth/}},
+  note         = {Accessed: 2025-12-27}
+}
+
+@misc{nvidia_dgx_h100_user_guide,
+  title        = {NVIDIA DGX H100 User Guide},
+  author       = {{NVIDIA}},
+  year         = {2025},
+  note         = {NVIDIA Documentation, accessed 2025-12-27},
+  howpublished = {\url{https://docs.nvidia.com/dgx/dgxh100-user-guide/index.html}}
+}
+
+@misc{ubuntu_2204_lts_release,
+  title        = {Ubuntu 22.04 LTS (Jammy Jellyfish)},
+  author       = {{Canonical Ltd.}},
+  year         = {2022},
+  note         = {Official Ubuntu Release Page, accessed 2025-12-27},
+  howpublished = {\url{https://releases.ubuntu.com/jammy/}}
+}
+
+@misc{nvidia_connectx7_vpi,
+  title        = {NVIDIA ConnectX-7 VPI Adapter Cards},
+  author       = {{NVIDIA}},
+  year         = {2025},
+  note         = {NVIDIA Networking Documentation, accessed 2025-12-27},
+  howpublished = {\url{https://docs.nvidia.com/networking/display/connectx7vpi}}
+}
+
+@misc{nvidia_nvlink_nvswitch,
+  title        = {NVIDIA NVLink and NVSwitch Interconnect},
+  author       = {{NVIDIA}},
+  year         = {2025},
+  note         = {NVIDIA Data Center Technologies, accessed 2025-12-27},
+  howpublished = {\url{https://www.nvidia.com/en-us/data-center/nvlink/}}
+}
+
+@misc{agrawal2025optimizingmlconcurrentcomputation,
+  title         = {Optimizing ML Concurrent Computation and Communication with GPU DMA Engines},
+  author        = {Anirudha Agrawal and Shaizeen Aga and Suchita Pati and Mahzabeen Islam},
+  year          = {2025},
+  eprint        = {2412.14335},
+  archiveprefix = {arXiv},
+  primaryclass  = {cs.AR},
+  url           = {https://arxiv.org/abs/2412.14335}
+}
+
+@misc{uccl_kv_transfer_engine_blog,
+  title        = {Everything You Want to Know about KV Cache Transfer Engine},
+  author       = {{UCCL Team}},
+  year         = {2025},
+  note         = {UCCL Project Blog Post, accessed 2025-12-27},
+  howpublished = {\url{https://uccl-project.github.io/posts/kv-transfer-engine/}},
+  month        = aug
+}
+
+@misc{python312,
+  title        = {Python 3.12},
+  author       = {{Python Software Foundation}},
+  howpublished = {\url{https://www.python.org/downloads/release/python-312/}},
+  note         = {Latest stable release of Python 3.12 series},
+  year         = {2025}
+}
+
+@misc{cuda128,
+  title        = {CUDA Toolkit 12.8},
+  author       = {NVIDIA},
+  howpublished = {\url{https://developer.nvidia.com/cuda-12-8-0-download-archive}},
+  note         = {CUDA Toolkit Version 12.8},
+  year         = {2025}
+}
+
+@misc{nvidia_driver570195,
+  title        = {NVIDIA GPU Driver Version 570.195.03},
+  author       = {NVIDIA},
+  howpublished = {\url{https://www.nvidia.com/Download/index.aspx}},
+  note         = {NVIDIA official driver download page for R570 series},
+  year         = {2025}
+}
+
+@misc{ofed2410,
+  title        = {OpenFabrics Enterprise Distribution (OFED) 24.10},
+  author       = {{OpenFabrics Alliance}},
+  howpublished = {\url{https://www.openfabrics.org/downloads/}},
+  note         = {OFED version 24.10 distribution},
+  year         = {2025}
+}
+
+@misc{nvidia_gpudirect_support,
+  title        = {NVIDIA GPUDirect RDMA and Driver Support},
+  author       = {NVIDIA},
+  howpublished = {\url{https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/gpu-operator-rdma.html}},
+  note         = {Documentation on GPUDirect RDMA support and NVIDIA GPU driver requirements},
+  year         = {2025}
+}
