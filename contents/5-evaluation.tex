@@ -1,18 +1,17 @@
 % !TEX root = ../main.tex
 \chapter{实验与评测}
 
-本章以 NCCL 为基准，围绕 \sysname 在分布式大模型推理场景中 \textbf{提升通信带宽、降低通信对计算的干扰} 的核心目标开展实验与评测。
+本章以 NCCL \cite{nccl_repo,hu2024demystifyingnccl} 为基准，围绕 \sysname 在分布式大模型推理场景中 \textbf{提升通信带宽、降低通信对计算的干扰} 的核心目标开展实验与评测。
 本章首先介绍测试环境，给出点对点场景下的性能测试，并进一步评估通信对计算任务的影响；
 然后以 AllGather 集合通信为代表，验证端到端推理中常见集合通信形态下的计算干扰。
 最后构建了一个真实的大模型推理场景以验证 \sysname 的实际效果。
 
 \section{测试环境}\label{sec:eval-env}
 
-\todo{ref to https://docs.nvidia.com/dgx/dgxh100-user-guide/introduction-to-dgxh100.html}
-\paragraph{硬件环境} 本章所涉及的测试均在 NVIDIA DGX H100 集群环境中进行。
+\paragraph{硬件环境} 本章所涉及的测试均在 NVIDIA DGX H100\cite{nvidia_dgx_h100_user_guide} 集群环境中进行。
 该平台配备两颗 INTEL(R) XEON(R) PLATINUM 8558 处理器（共 96 物理核），能够为多 GPU 并行任务提供充足的主机侧算力与调度能力。
 GPU 侧搭载 8 张 NVIDIA H100 GPU，总显存容量为 640\,GB。
-在 GPU 互联方面，DGX H100 采用第 4 代 NVLink 互联（4th generation NVLink），为 GPU 间点对点通信提供最高约 900\,GB/s 的双向带宽。
+在 GPU 互联方面，DGX H100 采用第 4 代 NVLink 互联（4th generation NVLink）\cite{nvidia_nvlink_nvswitch}，为 GPU 间点对点通信提供最高约 900\,GB/s 的双向带宽。
 另外配备 8 张 NVIDIA ConnectX-7 InfiniBand 网卡，通过 4 个 OSFP 高速端口与 GPU 连接，单网卡提供最高 400\,Gbps的单向带宽。
 
 % 2 x INTEL(R) XEON(R) PLATINUM 8558 CPUs with 48 cores
@@ -20,8 +19,8 @@ GPU 侧搭载 8 张 NVIDIA H100 GPU，总显存容量为 640\,GB。
 % 4 x OSFP ports for 8 x NVIDIA ConnectX-7 400Gbps InfiniBand Cards
 % 4 x 4th generation NVLinks that provide 900 GB/s GPU-to-GPU bandwidth
 
-\paragraph{软件环境} 本文所有测试所使用的操作系统为 Ubuntu 20.04 LTS。
-其上使用的软件为 Python 3.12， CUDA 12.8，NCCL 2.25.1，GPU 驱动版本 570.195.03，OFED 版本 24.10。
+\paragraph{软件环境} 本文所有测试所使用的操作系统为 Ubuntu 22.04 LTS\cite{ubuntu_2204_lts_release}。
+其上使用的软件为 Python 3.12\cite{python312}， CUDA 12.8\cite{cuda128}，NCCL 2.25.1\cite{nccl_repo}，GPU 驱动版本 570.195.03\cite{nvidia_driver570195}，OFED 版本 24.10\cite{ofed2410}。
 测试时使用了 Docker 容器进行开发，其造成的性能影响可以忽略不计。
 
 \section{点对点通信测试}
@@ -77,7 +76,7 @@ NVLink P2P 测试，主要测量不同消息大小下，\sysname 与 NCCL 的有
 \subsection{跨节点 RDMA 通信}
 
 跨节点通信通过 InfiniBand RDMA 链路完成，其性能不仅受链路物理带宽影响，
-还与协议栈开销、QP 并发度、在途请求数量（outstanding work requests）以及收发队列调度等因素密切相关。
+还与协议栈开销、QP 并发度、在途请求数量（outstanding work requests）以及收发队列调度等因素密切相关\cite{kalia2016rdma_design_guidelines,sur2006rdmaread}。
 本节对 RDMA P2P 的评测采用两阶段测试策略：
 先确定合适的 QP 并发度以获得稳定的持续带宽，再在该 QP 数量下考察不同消息大小的有效带宽性能。
 
@@ -126,7 +125,7 @@ QP 数量则反映了通信端在 RDMA 层面的并行度：当 QP 较少时，�
 
 前台 Attention 计算部分选取 Qwen3-32B 模型的注意力配置作为参数模拟真实推理场景，
 并且设定较大批处理数量以确保计算负载充足；
-选取 FlashAttention3 作为 Attention 算子实现，以获得 SOTA 的计算性能；
+选取 FlashAttention3 \cite{flash_attention_paper,flash_attention2_paper,flash_attention3_paper,flash-attention_repo}作为 Attention 算子实现，以获得 SOTA 的计算性能；
 采用相对计算性能作为指标，即“通信并发下计算性能 / 无通信 baseline 计算性能”，越接近 1 表示对计算影响越小。
 
 \subsection{节点内通信}
@@ -190,19 +189,9 @@ QP 数量的变化不仅会影响链路带宽利用率，
     \label{fig:rdma-compute-impact-vs-qp}
 \end{figure}
 
-% \section{集合通信 AllGather 对计算的影响}
-
-% AllGather 是张量并行（TP）等并行策略中常见的集合通信原语之一，
-% 本节对比 NCCL 与 \sysname 在 NVLink 与 RDMA 两类链路上执行 AllGather 时对前台计算的影响。
-
-% 图~\ref{fig:allgather-compute-impact} 总结了 AllGather 对计算性能的影响。
-% 在 NVLink 场景下，通信并发会带来约 14\% 左右的计算下降，且 \sysname 与 NCCL 表现接近；
-% 在 RDMA 场景下，NCCL 执行 all gather 集合通信会导致计算性能下降 11%，
-% 而 \sysname 对计算影响均接近于零，说明跨节点通信在该测试设置下能够较好地与计算解耦。
-
 \section{集合通信 AllGather 对计算的影响}
 
-AllGather 是张量并行（Tensor Parallelism, TP）等并行策略中最为常见的集合通信原语之一，
+AllGather 是张量并行（Tensor Parallelism, TP）等并行策略中最为常见的集合通信原语之一\cite{shoeybi2019megatron,hu2024demystifyingnccl}，
 其性能直接影响到多卡推理过程中各计算阶段的同步效率。
 与点对点通信不同，AllGather 通常涉及多 GPU 同步与多轮数据交换，
 其通信实现方式更容易对前台计算任务产生干扰。
@@ -253,7 +242,7 @@ AllGather 是张量并行（Tensor Parallelism, TP）等并行策略中最为常
 
 \subsection{测试场景与系统设置}
 
-端到端测试面向 MaaS（Model-as-a-Service）场景下的分布式大模型推理系统。
+端到端测试面向 MaaS（Model-as-a-Service）\cite{serverlessllm_paper,blitzscale_paper} 场景下的分布式大模型推理系统。
 在该场景中，系统需要应对请求负载的动态变化，并通过在线扩容实例数量来提升整体服务能力。
 扩容过程中，新实例通常需要快速加载模型参数，同时还需与已有实例协同完成推理计算，
 从而使得模型参数传输、KV Cache 交换等通信操作与前台推理计算在时间上高度重叠。
@@ -262,9 +251,9 @@ AllGather 是张量并行（Tensor Parallelism, TP）等并行策略中最为常
 通信与计算并发执行所带来的资源竞争会反映在 token 生成节奏的波动上。
 因此，该测试场景能够有效放大通信机制差异，并检验系统在真实负载下的稳定性与鲁棒性。
 
-本实验基于 FlashInfer 算子库，使用 C++ 实现高性能的 PD 分离推理系统，
-其整体推理性能与当前学术界和工业界广泛采用的 SOTA 推理系统（如 vLLM）进行对齐。
-实验选取 Qwen3-32B 模型，重点关注解码（Decode）阶段的推理性能表现。
+本实验基于 FlashInfer \cite{flashinfer_repo} 算子库，使用 C++ 实现高性能的 PD 分离推理系统\cite{distserve_paper,blitzscale_paper}，
+其整体推理性能与当前学术界和工业界广泛采用的 SOTA 推理系统（如 vLLM）\cite{kwon2023pagedattention} 进行对齐。
+实验选取 Qwen3-32B \cite{Qwen3-32B_model} 模型，重点关注解码（Decode）阶段的推理性能表现。
 
 \subsection{性能指标与评测方法}
 

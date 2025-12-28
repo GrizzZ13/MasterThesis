@@ -4,13 +4,13 @@
 
 本章将介绍 \sysname 的整体设计理念、系统架构以及核心组件的工作方式。
 为了应对大模型推理过程中点对点通信效率不足的问题，
-\sysname 在系统设计上充分利用 GPU 集群的横向 RDMA 网络与纵向 NVLink 高速互联，
+\sysname 在系统设计上充分利用 GPU 集群的横向 RDMA 网络与纵向 NVLink 高速互联\cite{nvidia2025gpudirectrdma,nvidia_nvlink_nvswitch,maltenberger2022sortinginterconnects}，
 构建了一个在不占用 GPU 计算资源流式多处理器的前提下，支持高带宽、低时延传输的通信库。
 
 \section{设计目标}
 
 \sysname 是面向大模型推理场景设计的高性能通信库，其目标是在推理过程中提供高效、稳定、可扩展的节点间数据传输能力。
-与传统的 GPU 通信方式相比，\sysname 采用控制面完全卸载（fully control-plane offloading）的方式，
+与传统的 GPU 通信方式相比\cite{uccl_paper,chen2025iccl,nvshmem_repo,hu2024demystifyingnccl,nccl_repo}，\sysname 采用控制面完全卸载（fully control-plane offloading）的方式，
 将通信的发起以及调度工作交由 CPU 线程执行，避免占用 GPU 计算资源，使得推理任务能够最大化地利用 GPU 的算力。
 \sysname 的设计主要具有以下特点：
 
@@ -82,7 +82,7 @@
 应用接口层显式暴露了优先级概念，
 使用户或上层框架能够根据任务性质（如延迟敏感型控制消息、带宽密集型参数传输等）设置不同优先级。
 进行调度时根据不同优先级进行决策，实现基于优先级的流量管理和跨通道的带宽分配策略。
-这样的设计不仅使系统能够满足多种通信模式的不同性能需求，还为实现服务质量控制（QoS）奠定了关键基础。
+这样的设计不仅使系统能够满足多种通信模式的不同性能需求，还为实现服务质量控制（QoS）奠定了关键基础\cite{parekh1993gps}。
 相比仅依赖物理链路级别的调度策略，以逻辑通道为中心的优先级表达能够提供更细粒度的控制能力，
 更适合现代大模型推理中高度动态且层次丰富的通信模式。
 
@@ -394,7 +394,7 @@ $Q^{\mathrm{remote}}_{id}$ 中记录的源地址、目的地址及长度，构�
       \item \textbf{DMA 搬运}：实际数据传输由 RNIC 在两端 GPU 显存之间通过 DMA 完成，
             CPU 只负责构造和提交工作请求；
       \item \textbf{可批量提交}：多个分片可以在一次轮询片段内被组织成一个 WR list，
-            通过一次 doorbell 动作整体提交给 RNIC，从而减少 CPU–NIC 间的交互开销。
+            通过一次 doorbell 动作整体提交给 RNIC，从而减少 CPU–NIC 间的交互开销\cite{nvidia2025gpudirectrdma,nvidia2025gdrdoc,kalia2016rdma_design_guidelines}。
 \end{itemize}
 
 抽象算法中的在途量约束参数 $N$ 在这里自然对应“当前允许运行中的 RDMA Write 任务数量上限”。

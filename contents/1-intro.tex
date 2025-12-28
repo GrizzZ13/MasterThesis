@@ -4,20 +4,20 @@
 
 \section{研究背景}
 
-近年来，以大语言模型（Large Language Model, LLM）为代表的新兴人工智能技术飞速发展，正深刻重塑科技产业格局。
+近年来，以大语言模型\cite{DeepSeek-R1_model,DeepSeek-V3_model,GPT-5_model,Gemini-3_model}（Large Language Model, LLM）为代表的新兴人工智能技术飞速发展，正深刻重塑科技产业格局。
 LLM 凭借强大的自然语言理解与生成能力，在代码生成、内容创作、知识问答乃至复杂推理等任务中展现出前所未有的性能。
-缩放定律（Scaling Law）是这一技术进步的核心驱动力：
-大量实证研究表明，模型性能随参数量、训练数据量以及计算量的增加而持续提升，呈现出可预测的幂律关系。
+缩放定律\cite{kaplan2020scalinglaws}（Scaling Law）是这一技术进步的核心驱动力：
+大量实证研究表明，模型性能随参数量、训练数据量以及计算量的增加而持续提升，呈现出可预测的幂律关系\cite{kaplan2020scalinglaws,hoffmann2022computeoptimal}。
 这一规律不仅指导了模型架构与训练策略的设计，也推动了基础设施层面的系统性演进。
 
-受 Scaling Law 驱动，模型参数量呈指数级增长。早期模型如 BERT（约 0.34B 参数）和 GPT-2（1.5B）尚可在单卡 GPU 上完成推理；
-而如今主流开源模型已普遍迈入百亿乃至千亿量级——例如 DeepSeek-R1-671B 包含 6710 亿参数，Qwen3-235B 也达到 2350 亿参数规模。
-如此庞大的参数体量使得模型无法被单个 GPU 的高带宽内存（High-Bandwidth Memory, HBM）所容纳。
+受 Scaling Law 驱动，模型参数量呈指数级增长。早期模型如 BERT\cite{devlin2019bert}（约 0.34B 参数）和 GPT-2\cite{gpt2_paper}（1.5B）尚可在单卡 GPU 上完成推理；
+而如今主流开源模型已普遍迈入百亿乃至千亿量级——例如 DeepSeek-R1-671B \cite{DeepSeek-R1_model}包含 6710 亿参数，Qwen3-235B\cite{Qwen3-235B-A22B_model} 也达到 2350 亿参数规模。
+如此庞大的参数体量使得模型无法被单个 GPU 的高带宽内存（High-Bandwidth Memory, HBM）所容纳\cite{nvidia_a100_datasheet,nvidia_dgx_h100_user_guide,nvidia_hopper_architecture_blog}。
 以 FP16 精度部署 Qwen3-235B 即需约 470 GB 显存，远超当前顶级消费级（如 NVIDIA RTX 4090，24 GB）乃至数据中心级 GPU（如 H20，140 GB）的内存容量。
 展望未来，行业级模型参数量有望突破万亿级别，对推理系统的内存与通信能力提出更高要求。
 
 为部署如此大规模的模型，分布式推理已成为必要手段。当前主流的并行策略主要包括张量并行（Tensor Parallelism, TP）、
-流水线并行（Pipeline Parallelism, PP）、数据并行（Data Parallelism, DP）以及专家并行（Expert Parallelism, EP）。
+流水线并行（Pipeline Parallelism, PP）、数据并行（Data Parallelism, DP）以及专家并行（Expert Parallelism, EP）\cite{huang2019gpipe,shoeybi2019megatron,shazeer2017moe,lepikhin2020gshard,fedus2022switch,hwang2023tutel,DeepEP_repo}。
 TP 将注意力头（Attention Head）切分到多个设备上协同计算，并引入集合通信规约（AllReduce）不同注意力头的结果，通信密集但可降低单设备的计算和内存压力；
 PP 将模型按层拆分至不同设备，通过流水线重叠计算与通信；
 DP 复制完整模型副本，不同请求路由到不同模型副本进行推理，提高了系统的并行度；
@@ -25,30 +25,30 @@ EP 则专为稀疏激活的混合专家（Mixture of Experts, MoE）架构设计
 这些并行策略常组合使用，以在计算、内存与通信之间取得平衡。
 然而，无论采用何种并行方式，设备间频繁的数据交换都高度依赖底层通信库的性能，使其成为制约大模型推理吞吐与延迟的关键瓶颈。
 
-随着推理系统的不断演进，又进一步演进出了预填充-解码分离（Prefill-Decode Disaggregaton）推理架构。
+随着推理系统的不断演进，又进一步演进出了预填充-解码分离（Prefill-Decode Disaggregaton）推理架构\cite{distserve_paper,splitwise_paper}。
 该架构将推理流程分为计算密集型的预填充（Prefill）阶段和内存密集型的解码（Decode）阶段，并将它们分离到不同的硬件资源上，
 在预填充完成后，需要将产生的键值缓存（KV Cache）从预填充节点传输到解码节点，从而实现对两个阶段的独立优化。
 PD 分离系统相比于 PD 混合（PD-Colocation）系统降低了首个令牌时间（Time-to-first-token, TTFT），提升了系统的令牌吞吐（Token Throughput）。
 然而，PD分离中 KV Cache 的跨界点迁移对于网络传输性能提出了更高的要求，尤其依赖于高带宽、低时延的通信机制。
 
-此外，在模型即服务(Model-as-a-Service，MaaS) 的云原生部署环境中，云服务商为了提高资源利用率，可能会采用模型按需部署的方式，
+此外，在模型即服务(Model-as-a-Service，MaaS) \cite{blitzscale_paper,serverlessllm_paper} 的云原生部署环境中，云服务商为了提高资源利用率，可能会采用模型按需部署的方式，
 对于模型推理服务实例根据用户请求用量进行自动扩缩容从而降低成本。为了满足服务等级目标（Service Level Objective），
 在进行模型扩容时的关键点在于加速模型推理实例的启动速度，其中模型参数加载的时间占据了实例启动时间的主要部分。
 为了加速模型参数加载速度，云服务商采用通过网络进行参数传输的优化方式，将模型参数从一些正在运行的 GPU 实例传输到空闲的 GPU 实例上，
 极大降低了模型推理服务的启动时间。
 在通过网络加载参数的过程中，由于模型参数规模较大，涉及到大量节点内、节点见的网络通信，对通信库的性能提出了更高的要求。
 
-为了应对大模型推理场景中的各种不同的通信需求，学术界和工业界提出了多种不同的 GPU 通信方案，包括 NCCL、NVSHMEM、UCCL-P2P、Mooncake 等。
+为了应对大模型推理场景中的各种不同的通信需求，学术界和工业界提出了多种不同的 GPU 通信方案，包括 NCCL、NVSHMEM、UCCL-P2P、Mooncake 等\cite{nccl_repo,hu2024demystifyingnccl,nvshmem_repo,uccl_repo,uccl_paper,Mooncake_repo,mooncake_paper,gloo_repo,amd2025rccl,intel2024oneccl}。
 在大模型推理系统中，通信库一方面需要对开发者提供易用的编程接口，另一方面需要针对不同的硬件拓扑和通信模式进行优化，以最大化通信性能。
 
 目前主流的 GPU 通信库存在如下问题，影响大模型推理系统整体性能的进一步提升：
 
 \begin{itemize}
-  \item 数据传输控制面与计算任务存在资源竞争。GPU 通信任务的控制面通常依赖于流式多处理器（Streaming Multiprocessor, SM），
-        通信任务与计算任务存在 SM 资源争抢，影响计算效率，导致推理系统的整体性能下降。
-  \item 现有通信库不能很好地应对推理系统流量的复杂性。在大模型推理系统中，通常存在多种不同的通信模式，从而引入了不同的流量类型。
-        多种流量之间可能存在带宽竞争，当带宽有限时，如果一个带宽敏感的通信任务被其他大流量通信任务挤占带宽，
-        可能会导致通信延迟大幅增加，进而影响推理系统的整体性能。
+    \item 数据传输控制面与计算任务存在资源竞争。GPU 通信任务的控制面通常依赖于流式多处理器（Streaming Multiprocessor, SM），
+          通信任务与计算任务存在 SM 资源争抢，影响计算效率，导致推理系统的整体性能下降。
+    \item 现有通信库不能很好地应对推理系统流量的复杂性。在大模型推理系统中，通常存在多种不同的通信模式，从而引入了不同的流量类型。
+          多种流量之间可能存在带宽竞争，当带宽有限时，如果一个带宽敏感的通信任务被其他大流量通信任务挤占带宽，
+          可能会导致通信延迟大幅增加，进而影响推理系统的整体性能。
 \end{itemize}
 
 如果通信库能够进行控制面卸载（Control Plane Offloading），避免通信任务控制面与计算任务的资源竞争，
@@ -57,11 +57,11 @@ PD 分离系统相比于 PD 混合（PD-Colocation）系统降低了首个令牌
 \section{研究现状}
 
 \paragraph{NCCL}
-NCCL（NVIDIA Collective Communication Library）是 NVIDIA 推出的 GPU 集合通信库，
+NCCL（NVIDIA Collective Communication Library）\cite{nccl_repo,hu2024demystifyingnccl}是 NVIDIA 推出的 GPU 集合通信库，
 主要面向多 GPU 与多节点环境下的深度学习训练与高性能计算任务。
 其核心目标是为分布式系统提供高效、可扩展的集合通信（Collective Communication）原语，
 包括 All-Reduce、All-Gather、Reduce、Broadcast 等操作，从而降低通信开销、提升分布式训练效率。
-NCCL 针对 NVIDIA GPU 架构进行了深度优化，充分利用 GPU 之间的高速互联技术（如 NVLink）、网络互联技术（如 RDMA、GPU Direct RDMA），
+NCCL 针对 NVIDIA GPU 架构进行了深度优化，充分利用 GPU 之间的高速互联技术（如 NVLink\cite{nvidia_nvlink_nvswitch}）、网络互联技术（如 RDMA、GPU Direct RDMA\cite{nvidia2025gpudirectrdma}），
 实现数据在 GPU 内存之间的直接传输，显著减少冗余数据拷贝带来的性能损失。
 此外，NCCL 使用拓扑感知的通信算法，通过自动检测系统拓扑结构构建最优通信路径，确保在不同硬件配置下均能获得接近理论峰值的通信带宽。
 作为主流深度学习框架（如 PyTorch 和 TensorFlow）的底层通信模块，NCCL 已成为 GPU 集群环境中高性能集合通信的事实标准，
@@ -79,7 +79,7 @@ NCCL 针对 NVIDIA GPU 架构进行了深度优化，充分利用 GPU 之间的�
 由于 NCCL 不支持 GPU 直接访问网卡资源，其进行跨节点 RDMA 通信时，
 会在主机内存分配 CPU 和 GPU 可直接访问的共享信号缓冲区作为中转，
 并通过 CPU 上启动的线程轮询网卡以监测通信任务执行情况，
-并将结果写回信号缓冲区，这个线程被称为代理线程（Proxy Thread）；
+并将结果写回信号缓冲区，这个线程被称为代理线程\cite{hu2024demystifyingnccl}（Proxy Thread）；
 在 GPU 上也启动线程以轮询共享信号缓冲区，获取通信任务执行状态，进行网卡-CPU-GPU的跨设备同步。
 这种代理线程、多级轮询、跨设备同步的设计，
 导致 NCCL 在进行跨节点通信时引入额外延迟，不能应对延迟敏感场景工作负载的需求。
@@ -89,7 +89,7 @@ NCCL 在进行节点内的多 GPU 通信时，存在大量的计算资源浪费�
 其通过 NVLink 进行多 GPU 通信时，启动大量 GPU 线程执行 Load/Store 指令进行数据搬运，
 占据流式多处理器（SM）来完成 GPU 之间的数据传输。
 GPU SM 属于计算资源，数量有限，在和计算任务并行时，会产生资源竞争、从而影响计算效率，
-GPU 的拷贝引擎（Copy Engine，CE）则专门用于数据传输任务，NCCL 缺乏对于 CE 的充分利用。
+GPU 的拷贝引擎\cite{agrawal2025optimizingmlconcurrentcomputation}（Copy Engine，CE）则专门用于数据传输任务，NCCL 缺乏对于 CE 的充分利用。
 
 \begin{figure}[h]
     \centering
@@ -99,13 +99,13 @@ GPU 的拷贝引擎（Copy Engine，CE）则专门用于数据传输任务，NCC
 \end{figure}
 
 \paragraph{NVSHMEM}
-NVSHMEM 是一种面向 GPU 的、基于 OpenSHMEM 标准的单边通信库，
+NVSHMEM 是一种面向 GPU 的、基于 OpenSHMEM 标准的单边通信库\cite{nvshmem_repo,nvidia2025nvshmem,openshmem2020}，
 旨在为大规模异构系统中的 GPU 间通信提供高效、可扩展的编程抽象。
 其核心遵循 Partitioned Global Address Space（PGAS）模型，
 为每个 PE（Processing Element）提供全局可寻址的对称内存（symmetric heap），
 并通过 Put、Get 等单边原语允许一个 PE 直接读写远程 PE 的对称内存区域。
 
-在跨节点 RDMA 场景下，NVSHMEM 引入了 IBGDA（InfiniBand GPU Direct Async）
+在跨节点 RDMA 场景下，NVSHMEM 引入了 IBGDA\cite{agostini2018gpudirectasync,nvidia2025gdrdoc}（InfiniBand GPU Direct Async）
 以实现“GPU 直驱网卡”的通信关键路径。
 图 ~\ref{fig:nvshmem-ibgda} 展示了 NVSHMEM IBGDA 跨节点 RDMA 通信流程。
 与传统由 CPU 代理线程（proxy）提交/敲门铃不同，IBGDA 将控制面与数据面尽可能下沉到 GPU：
@@ -126,11 +126,11 @@ RNIC 在收到 doorbell 后，利用 GPUDirect RDMA 直接从 GPU 内存中读�
     \label{fig:nvshmem-ibgda}
 \end{figure}
 
-\paragraph{UCCL-P2P} 
-UCCL-P2P 项目是加州大学伯克利分校的 Sky Computing Lab 提出的高性能 KV Cache 传输引擎，
+\paragraph{UCCL-P2P}
+UCCL-P2P \cite{uccl_paper,uccl_repo} 项目是加州大学伯克利分校的 Sky Computing Lab 提出的高性能 KV Cache 传输引擎，
 提供了 SM-free 的特性，轻量级的项目代码，以及易用性强的编程接口。
 UCCL-P2P 使用 GPU Direct RDMA 技术实现高性能的跨节点 KV Cache 传输，
-与 NCCL 不同的是 UCCL-P2P通过控制面卸载（Control Plane Offloading）技术，
+与 NCCL 不同的是 UCCL-P2P通过控制面卸载\cite{uccl_kv_transfer_engine_blog}（Control Plane Offloading）技术，
 完全消除了 GPU SM 在数据传输过程中的参与，避免了通信任务与计算任务的资源竞争，从而提升了大模型推理系统的整体性能。
 但是 UCCL-P2P 目前仅支持 SM-free 的 RDMA 通信模式，目前不支持节点内多 GPU 之间通过 NVLink 进行 SM-free 的高带宽通信，
 存在一定局限性，限制了其在大模型推理系统中的应用场景。

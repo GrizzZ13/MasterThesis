@@ -36,7 +36,7 @@ public:
   virtual ~Recver() = default;
 };
     \end{minted}
-    \caption{C++ Sender 与 Recver 接口定义}
+    \caption{Sender 与 Recver 接口定义}
     \label{fig:sender-recver-interface}
 \end{figure}
 
@@ -189,19 +189,19 @@ public:
 
   void notify() {
     this->finished_.store(true, std::memory_order_release);
-#ifndef BUSY_WAIT
-    this->finished_.notify_all();
-#endif
+    if (!globalConfig.enable_busy_wait) {
+      this->finished_.notify_all();
+    }
   }
 
   void wait() {
-#ifndef BUSY_WAIT
-    this->finished_.wait(false, std::memory_order_acquire);
-#else
-    while (!this->finished_.load(std::memory_order_acquire)) {
-      _mm_pause();
+    if (globalConfig.enable_busy_wait) {
+      while (!this->finished_.load(std::memory_order_acquire)) {
+        _mm_pause();
+      }
+    } else {
+      this->finished_.wait(false, std::memory_order_acquire);
     }
-#endif
   }
 };
     \end{minted}
@@ -704,7 +704,7 @@ private:
 
 \subsection{跨进程通信内存访问机制}
 
-NVLink 链路围绕 CUDA IPC 提供的跨进程访问和 Peer Access功能构建。
+NVLink 链路围绕 CUDA IPC 提供的跨进程访问和 Peer Access功能构建\cite{nvidia2025cudipc,nvidia_nvlink_nvswitch}。
 发送方在应用层调用 \texttt{send()} 时，
 通过 \texttt{cudaIpcGetMemHandle()} 将本地 GPU 缓冲区封装为 \texttt{cudaIpcMemHandle\_t} 并传给接收方；
 接收方在拿到该 handle 之后，首先调用 \texttt{cudaIpcOpenMemHandle()}
