@@ -4,9 +4,9 @@
 
 \section{大模型推理}
 
-\subsection{Transformer架构}
+\subsection{大模型推理系统}
 
-始于 Transformer \cite{vaswani2017attention}架构提出，大语言模型（Large Language Models, LLMs）产生了重大突破。
+大语言模型（Large Language Models, LLMs）的重大突破始于 Transformer \cite{vaswani2017attention} 架构。
 该架构通过完全基于注意力机制的设计，取代了传统循环神经网络在序列建模中的核心地位，
 从而彻底改变了自然语言处理（Natural Language Processing, NLP）领域，
 并成为当前几乎所有先进大模型的基础架构。
@@ -53,9 +53,6 @@ FFN 首先通过一个从 \( d_{\text{model}} \) 到 \( d_{\text{ff}} \) 的线�
 其参数规模通常占据整个 Transformer 层的主要部分。
 此外，FFN 在不同 token 位置上相互独立，不涉及跨 token 的交互，
 因此具备良好的并行性，适合在 GPU 等硬件加速器上高效执行。
-
-\subsection{大模型推理系统}
-
 Transformer架构在推理阶段存在显著的性能瓶颈。
 首先，标准注意力机制的计算复杂度随序列长度n呈平方方增长，即$O(n^2)$，当处理长文本时，计算成本会急剧上升，
 导致推理速度变慢。其次，Transformer在推理过程中会产生的巨大内存消耗：

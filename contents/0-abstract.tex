@@ -1,24 +1,35 @@
 % !TEX root = ../main.tex
 
 \begin{abstract}[zh]
-  中文摘要应该将学位论文的内容要点简短明了地表达出来，应该包含论文中的基本信息，
-  体现科研工作的核心思想。摘要内容应涉及本项科研工作的目的和意义、研究方法、研究
-  成果、结论及意义。注意突出学位论文中具有创新性的成果和新见解的部分。摘要中不宜
-  使用公式、化学结构式、图表和非公知公用的符号和术语，不标注引用文献编号。硕士学
-  位论文中文摘要字数为 500 字左右，博士学位论文中文摘要字数为 800 字左右。英文摘
-  要内容应与中文摘要内容一致。
+  随着大语言模型参数规模增长，分布式推理对通信带宽与低干扰提出更高要求。
+  现有 GPU 通信库在推理负载下常将通信控制逻辑置于 GPU 侧，
+  易与前台算子争用计算资源，且难以按流量重要性调度，导致吞吐受限并放大尾延迟。
+  本文面向该场景设计并实现高性能通信库\sysname。
 
-  摘要页的下方注明本文的关键词（4 \textasciitilde{} 6 个）。
+  \sysname 以控制面完全卸载为核心，将通信发起与调度交由 CPU 后台线程处理，GPU 侧仅负责数据搬运；
+  跨节点采用 GPU Direct RDMA 实现显存到显存传输，
+  节点内基于 CUDA 进程间通信并利用拷贝引擎驱动 NVLink，通过句柄缓存降低映射开销。
+  为适配复杂流量，系统实现异步运行时与支持抢占的优先级调度器，并以统一的发送/接收接口屏蔽多链路差异。
+
+  实验表明 \sysname 在点对点通信的带宽与基准系统相当或更优。
+  同时本文进行了计算与通信重叠的测试，
+  在相同配置下 \sysname 对于计算任务性能无影响，基准系统计算性能损失最高约 17\%。
+  在端到端解码中相邻词元生成间隔分布更集中、更稳定。
+  说明 \sysname 可在保证高效传输的同时避免通信对计算的干扰，为高吞吐、低尾延迟推理提供通信基础。
 \end{abstract}
 
 \begin{abstract}[en]
-  Shanghai Jiao Tong University (SJTU) is a key university in China. SJTU was
-  founded in 1896. It is one of the oldest universities in China. The University
-  has nurtured large numbers of outstanding figures include JIANG Zemin, DING
-  Guangen, QIAN Xuesen, Wu Wenjun, WANG An, etc.
+  As the parameter scale of large language models continues to grow, distributed inference places higher demands on communication bandwidth and low interference with computation.
+  Existing GPU communication libraries often keep communication control logic on the GPU under inference workloads, which can contend with foreground kernels for compute resources and makes it difficult to schedule traffic by importance, thereby limiting throughput and amplifying tail latency.
+  To address this, this thesis designs and implements a high-performance communication library, \sysname, for large-model inference.
 
-  SJTU has beautiful campuses, Bao Zhaolong Library, Various laboratories. It
-  has been actively involved in international academic exchange programs. It is
-  the center of CERNet in east China region, through computer networks, SJTU has
-  faster and closer connection with the world.
+  The key idea of \sysname is full control-plane offloading: communication initiation and scheduling are handled by CPU background threads, while the GPU is responsible only for data movement.
+  For inter-node communication, \sysname adopts GPU Direct RDMA to enable GPU memory-to-memory transfers.
+  For intra-node communication, it leverages CUDA inter-process communication and drives NVLink via copy engines, reducing mapping overhead through handle caching.
+  To accommodate complex traffic patterns, the system provides an asynchronous runtime and a preemptive priority scheduler, and exposes a unified send/receive interface to hide differences across multiple links.
+
+  Experiments show that \sysname achieves point-to-point bandwidth comparable to or better than the baseline system.
+  We further evaluate computation--communication overlap: under the same configuration, \sysname does not degrade compute performance, whereas the baseline incurs up to about 17\% compute slowdown.
+  In end-to-end decoding, the distribution of inter-token generation intervals is more concentrated and stable.
+  These results indicate that \sysname can maintain efficient data transfer while avoiding interference with computation, providing a communication foundation for high-throughput and low-tail-latency inference.
 \end{abstract}

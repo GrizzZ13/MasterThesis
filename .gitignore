@@ -351,3 +351,4 @@ main.pdf
 SJTUTeX*/
 
 venv/
+__pycache__

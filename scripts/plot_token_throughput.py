@@ -3,6 +3,10 @@ from pathlib import Path
 import random
 
 import matplotlib.pyplot as plt
+from matplotlib.font_manager import FontProperties
+
+font = FontProperties(fname=str(Path(__file__).resolve().parent.parent / "SimHei.ttf"))
+font_size = 14
 
 
 def main() -> None:
@@ -59,30 +63,72 @@ def main() -> None:
 
     fig, ax = plt.subplots(figsize=(8, 4))
 
-    ax.plot(pickle_timestamps_ms, pickle_throughput, marker="o", label="Pickle")
-    ax.plot(nccl_timestamps_ms, nccl_throughput, marker="s", label="NCCL")
-    ax.set_xlabel("Timestamp (ms)")
-    ax.set_ylabel("Token throughput (tokens/s)")
-    ax.set_ylim(bottom=0, top=400)
+    # ax.plot(pickle_timestamps_ms, pickle_throughput, marker="o", label="Pickle")
+    # ax.plot(nccl_timestamps_ms, nccl_throughput, marker="s", label="NCCL")
+    # ax.set_xlabel("Timestamp (ms)")
+    # ax.set_ylabel("Token throughput (tokens/s)")
+    # ax.set_ylim(bottom=0, top=400)
+    # output_path = (
+    #     Path(__file__).resolve().parent.parent / "figures" / "token_throughput.png"
+    # )
+
+    ax.plot(pickle_timestamps_ms, pickle_duration_ms, label="Pickle NVLink")
+    ax.plot(nccl_timestamps_ms, nccl_duration_ms, label="NCCL NVLink")
+    ax.set_xlabel("时间戳 (ms)", fontsize=font_size, fontproperties=font)
+    ax.set_ylabel("Time Between Tokens (ms)", fontsize=font_size, fontproperties=font)
+    ax.set_ylim(bottom=0, top=35)
     output_path = (
-        Path(__file__).resolve().parent.parent / "figures" / "token_throughput.png"
+        Path(__file__).resolve().parent.parent / "figures" / "time_between_tokens.png"
     )
 
-    # ax.plot(pickle_timestamps_ms, pickle_duration_ms, marker="o", label="Pickle")
-    # ax.plot(nccl_timestamps_ms, nccl_duration_ms, marker="s", label="NCCL")
-    # ax.set_xlabel("Timestamp (ms)")
-    # ax.set_ylabel("Time Between Tokens (ms)")
-    # ax.set_ylim(bottom=0, top=35)
-    # output_path = (
-    #     Path(__file__).resolve().parent.parent / "figures" / "TBT.png"
-    # )
+    y_top = ax.get_ylim()[1] * 0.98
+
+    # scale_events = [
+    #     (430, "扩容开始"),
+    #     (620, "扩容结束"),
+    # ]
+    # for x, label in scale_events:
+    #     ax.axvline(x=x, color="gray", linestyle="--", linewidth=1, alpha=0.9, zorder=0)
+    #     ax.text(
+    #         x,
+    #         y_top,
+    #         label,
+    #         rotation=90,
+    #         va="top",
+    #         ha="right",
+    #         color="gray",
+    #         fontsize=10,
+    #         fontproperties=font,
+    #     )
+
+    ax.axvline(x=430, color="gray", linestyle="--", linewidth=1, alpha=0.9, zorder=0)
+    ax.text(
+        430,
+        y_top,
+        "扩容开始",
+        va="top",
+        ha="right",
+        fontsize=font_size,
+        fontproperties=font,
+    )
+
+    ax.axvline(x=620, color="gray", linestyle="--", linewidth=1, alpha=0.9, zorder=0)
+    ax.text(
+        620,
+        y_top,
+        "扩容结束",
+        va="top",
+        ha="right",
+        fontsize=font_size,
+        fontproperties=font,
+    )
 
     ax.grid(True, linestyle="--", alpha=0.5)
     ax.legend()
     fig.tight_layout()
-    
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.subplots_adjust(bottom=0.14)
     fig.savefig(output_path, dpi=300)
     print(f"Saved plot to {output_path}")
 

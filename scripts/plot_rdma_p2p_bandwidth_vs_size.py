@@ -1,6 +1,10 @@
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+from matplotlib.font_manager import FontProperties
+
+font = FontProperties(fname=str(Path(__file__).resolve().parent.parent / "SimHei.ttf"))
+font_size = 14
 
 
 def main() -> None:
@@ -68,8 +72,8 @@ def main() -> None:
     ax.set_xscale("log", base=2)
     ax.set_xticks(sizes)
     ax.set_xticklabels(size_labels, rotation=30, ha="right")
-    ax.set_xlabel("Message size")
-    ax.set_ylabel("Bandwidth (Gbps)")
+    ax.set_xlabel("消息大小", fontsize=font_size, fontproperties=font)
+    ax.set_ylabel("有效带宽 (Gbps)", fontsize=font_size, fontproperties=font)
     ax.set_ylim(0, 420)
     ax.grid(True, which="both", linestyle="--", alpha=0.5)
     ax.legend()
@@ -81,6 +85,7 @@ def main() -> None:
         / "p2p_rdma_bandwidth_vs_size.png"
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.subplots_adjust(bottom=0.22)
     fig.savefig(output_path, dpi=300)
     print(f"Saved plot to {output_path}")
 

@@ -1,6 +1,11 @@
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+from matplotlib.font_manager import FontProperties
+from matplotlib.ticker import MultipleLocator
+
+font = FontProperties(fname=str(Path(__file__).resolve().parent.parent / "SimHei.ttf"))
+font_size = 14
 
 
 def main() -> None:
@@ -73,13 +78,13 @@ def main() -> None:
     ax.set_xticks(sizes)
     ax.set_xticklabels(size_labels, rotation=30, ha="right")
 
-    ax.set_xlabel("Buffer size")
-    ax.set_ylabel("Latency (µs)")
+    ax.set_xlabel("缓冲区大小", fontsize=font_size, fontproperties=font)
+    ax.set_ylabel("延迟 (微秒)", fontsize=font_size, fontproperties=font)
+    ax.set_ylim(bottom=0)
+    ax.yaxis.set_major_locator(MultipleLocator(2000))
 
     ax.grid(True, which="both", linestyle="--", alpha=0.5)
     ax.legend()
-
-    fig.tight_layout()
 
     output_path = (
         Path(__file__).resolve().parent.parent
@@ -87,6 +92,7 @@ def main() -> None:
         / "cuda_ipc_open_close_overhead_vs_size.png"
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.subplots_adjust(bottom=0.22)
     fig.savefig(output_path, dpi=300)
 
     print(f"Saved plot to {output_path}")

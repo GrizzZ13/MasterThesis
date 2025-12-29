@@ -1,6 +1,10 @@
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+from matplotlib.font_manager import FontProperties
+
+font = FontProperties(fname=str(Path(__file__).resolve().parent.parent / "SimHei.ttf"))
+font_size = 14
 
 
 def main() -> None:
@@ -21,7 +25,7 @@ def main() -> None:
 
     ax.set_xticks(positions)
     ax.set_xticklabels(transports)
-    ax.set_ylabel("Relative compute throughput")
+    ax.set_ylabel("相对计算性能", fontsize=font_size, fontproperties=font)
     ax.set_ylim(bottom=0, top=1.05)
     ax.grid(axis="y", linestyle="--", alpha=0.5)
     ax.legend()
@@ -33,6 +37,7 @@ def main() -> None:
         / "allgather_compute_impact.png"
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.subplots_adjust(bottom=0.14)
     fig.savefig(output_path, dpi=300)
     print(f"Saved plot to {output_path}")
 

@@ -94,7 +94,7 @@ QP 数量则反映了通信端在 RDMA 层面的并行度：当 QP 较少时，�
 \begin{figure}[h]
     \centering
     \includegraphics[width=0.82\linewidth]{figures/p2p_rdma_bandwidth_vs_qp.png}
-    \caption{RDMA P2P 带宽 vs QP 数量（消息 1GB）}
+    \caption{RDMA P2P 场景下不同 QP 数量的有效带宽}
     \label{fig:rdma-bw-vs-qp}
 \end{figure}
 
@@ -113,7 +113,7 @@ QP 数量则反映了通信端在 RDMA 层面的并行度：当 QP 较少时，�
 \begin{figure}[h]
     \centering
     \includegraphics[width=0.82\linewidth]{figures/p2p_rdma_bandwidth_vs_size.png}
-    \caption{RDMA P2P 带宽 vs 消息大小（QP=4）}
+    \caption{RDMA P2P 场景下不同消息大小的有效带宽}
     \label{fig:rdma-bw-vs-size}
 \end{figure}
 
@@ -123,7 +123,7 @@ QP 数量则反映了通信端在 RDMA 层面的并行度：当 QP 较少时，�
 会直接影响端到端吞吐与延迟，仅比较通信带宽不足以反映大模型推理场景下的真实性能收益。
 本节以 Attention 计算作为前台基准负载，后台执行通信操作，比较不同通信实现对计算性能的影响。
 
-前台 Attention 计算部分选取 Qwen3-32B 模型的注意力配置作为参数模拟真实推理场景，
+前台 Attention 计算部分选取 Qwen3-32B \cite{Qwen3-32B_model} 模型的注意力配置作为参数模拟真实推理场景，
 并且设定较大批处理数量以确保计算负载充足；
 选取 FlashAttention3 \cite{flash_attention_paper,flash_attention2_paper,flash_attention3_paper,flash-attention_repo}作为 Attention 算子实现，以获得 SOTA 的计算性能；
 采用相对计算性能作为指标，即“通信并发下计算性能 / 无通信 baseline 计算性能”，越接近 1 表示对计算影响越小。
@@ -148,7 +148,7 @@ QP 数量则反映了通信端在 RDMA 层面的并行度：当 QP 较少时，�
 \begin{figure}[h]
     \centering
     \includegraphics[width=0.82\linewidth]{figures/p2p_nvlink_compute_impact_vs_size.png}
-    \caption{NVLink P2P 对计算的影响 vs 消息大小（相对计算性能）}
+    \caption{NVLink P2P 场景消息大小对计算性能的影响}
     \label{fig:nvlink-compute-impact-vs-size}
 \end{figure}
 
@@ -185,7 +185,7 @@ QP 数量的变化不仅会影响链路带宽利用率，
 \begin{figure}[h]
     \centering
     \includegraphics[width=0.82\linewidth]{figures/p2p_rdma_compute_impact_vs_qp.png}
-    \caption{RDMA P2P 对计算的影响 vs QP 数量（相对计算性能）}
+    \caption{RDMA P2P 场景 QP 数量对计算性能的影响}
     \label{fig:rdma-compute-impact-vs-qp}
 \end{figure}
 
@@ -201,26 +201,33 @@ AllGather 是张量并行（Tensor Parallelism, TP）等并行策略中最为常
 对比不同通信实现与链路类型下的计算性能变化。
 实验仍采用相对计算性能作为指标，相对计算性能越接近 1 表示通信对计算的影响越小。
 
-表~\ref{tab:allgather-compute-impact} 总结了不同 AllGather 实现方式下的相对计算性能结果。
+图~\ref{fig:allgather-compute-impact} 展示了不同 AllGather 实现方式下的相对计算性能结果。
 其中 baseline 表示无任何通信并发时的计算性能，
 其余配置分别覆盖 NCCL 与 \sysname 在 RDMA 与 NVLink 链路上的 AllGather 性能。
 
-\begin{table}[h]
+% \begin{table}[h]
+%     \centering
+%     \caption{AllGather 集合通信对计算性能的影响（相对计算性能）}
+%     \label{tab:allgather-compute-impact}
+%     \begin{tabular}{l c}
+%         \toprule
+%         \textbf{通信配置}               & \textbf{相对计算性能} \\
+%         \midrule
+%         Baseline                    & 1.00            \\
+%         \sysname\ AllGather(RDMA)   & 1.00            \\
+%         \sysname\ AllGather(NVLink) & 1.00            \\
+%         NCCL AllGather(RDMA)        & 0.89            \\
+%         NCCL AllGather(NVLink)      & 0.86            \\
+%         \bottomrule
+%     \end{tabular}
+% \end{table}
+
+\begin{figure}[h]
     \centering
-    \caption{AllGather 集合通信对计算性能的影响（相对计算性能）}
-    \label{tab:allgather-compute-impact}
-    \begin{tabular}{l c}
-        \toprule
-        \textbf{通信配置}               & \textbf{相对计算性能} \\
-        \midrule
-        Baseline                    & 1.00            \\
-        \sysname\ AllGather(RDMA)   & 1.00            \\
-        \sysname\ AllGather(NVLink) & 1.00            \\
-        NCCL AllGather(RDMA)        & 0.89            \\
-        NCCL AllGather(NVLink)      & 0.86            \\
-        \bottomrule
-    \end{tabular}
-\end{table}
+    \includegraphics[width=0.82\linewidth]{figures/relative_perf_vs_msg_size_broken_y.png}
+    \caption{NCCL AllGather 对计算性能的影响}
+    \label{fig:allgather-compute-impact}
+\end{figure}
 
 可以观察到，在 RDMA 链路下 NCCL 执行 AllGather 时会对前台计算产生明显干扰，
 计算性能下降约 11\%；

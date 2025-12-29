@@ -1,6 +1,10 @@
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+from matplotlib.font_manager import FontProperties
+
+font = FontProperties(fname=str(Path(__file__).resolve().parent.parent / "SimHei.ttf"))
+font_size = 14
 
 
 def main() -> None:
@@ -12,8 +16,8 @@ def main() -> None:
     ax.plot(qps, pickle_bw, marker="o", label="Pickle")
     ax.plot(qps, nccl_bw, marker="s", label="NCCL")
 
-    ax.set_xlabel("QP count")
-    ax.set_ylabel("Bandwidth (Gbps)")
+    ax.set_xlabel("QP 数量", fontsize=font_size, fontproperties=font)
+    ax.set_ylabel("有效带宽 (Gbps)", fontsize=font_size, fontproperties=font)
     ax.set_xticks(qps)
     ax.set_ylim(0, 420)
     ax.grid(True, linestyle="--", alpha=0.5)
@@ -26,6 +30,7 @@ def main() -> None:
         / "p2p_rdma_bandwidth_vs_qp.png"
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.subplots_adjust(bottom=0.14)
     fig.savefig(output_path, dpi=300)
     print(f"Saved plot to {output_path}")
 
