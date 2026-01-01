@@ -66,7 +66,7 @@ NVLink P2P 测试，主要测量不同消息大小下，\sysname 与 NCCL 的有
 这一操作涉及用户态和内核态的切换，建立 GPU 内存页表映射等开销，这一系列开销所消耗的时间可以到达毫秒级；
 尤其是映射的内存区域较大时需要映射的页数量众多，带来的开销进一步增大，从而显著影响传输性能。
 
-\begin{figure}[h]
+\begin{figure}[htbp]
     \centering
     \includegraphics[width=0.82\linewidth]{figures/p2p_nvlink_bandwidth_vs_size.png}
     \caption{NVLink P2P 带宽 vs 消息大小}
@@ -91,7 +91,7 @@ QP 数量则反映了通信端在 RDMA 层面的并行度：当 QP 较少时，�
 相比之下 NCCL 由于 CPU 代理线程和 GPU 线程协同问题，带来更大的控制面开销，在 QP 数量少时难以充分利用链路带宽。
 随着并发 QP 数量增加，二者带宽逐步上升，并在单网卡理论带宽上限（400Gbps）趋于稳定，这显示出两种实现均能够通过增加并发度来提升带宽利用率。
 
-\begin{figure}[h]
+\begin{figure}[htbp]
     \centering
     \includegraphics[width=0.82\linewidth]{figures/p2p_rdma_bandwidth_vs_qp.png}
     \caption{RDMA P2P 场景下不同 QP 数量的有效带宽}
@@ -110,7 +110,7 @@ QP 数量则反映了通信端在 RDMA 层面的并行度：当 QP 较少时，�
 随消息大小升高，在 1GB 的大消息尺度下，两者差距收敛，并接近理论带宽上限，
 这表明在大消息传输时，链路物理带宽成为主要瓶颈，二者均能较好地利用链路资源。
 
-\begin{figure}[h]
+\begin{figure}[htbp]
     \centering
     \includegraphics[width=0.82\linewidth]{figures/p2p_rdma_bandwidth_vs_size.png}
     \caption{RDMA P2P 场景下不同消息大小的有效带宽}
@@ -145,7 +145,7 @@ QP 数量则反映了通信端在 RDMA 层面的并行度：当 QP 较少时，�
 相较于 NVIDIA H100 GPU 共计 132 个 SM 的硬件规模，
 该开销已占据了相当比例的计算资源，对并发执行的计算任务产生了不可忽视的影响。
 
-\begin{figure}[h]
+\begin{figure}[htbp]
     \centering
     \includegraphics[width=0.82\linewidth]{figures/p2p_nvlink_compute_impact_vs_size.png}
     \caption{NVLink P2P 场景消息大小对计算性能的影响}
@@ -182,7 +182,7 @@ QP 数量的变化不仅会影响链路带宽利用率，
 而且 NCCL 在进行初始化阶段通常限制了跨节点 P2P 通道数量为较低的数值，
 进一步约束了启动核函数占用的 SM 资源规模，因此其对计算任务的影响较小且变化不大。
 
-\begin{figure}[h]
+\begin{figure}[htbp]
     \centering
     \includegraphics[width=0.82\linewidth]{figures/p2p_rdma_compute_impact_vs_qp.png}
     \caption{RDMA P2P 场景 QP 数量对计算性能的影响}
@@ -205,24 +205,7 @@ AllGather 是张量并行（Tensor Parallelism, TP）等并行策略中最为常
 其中 baseline 表示无任何通信并发时的计算性能，
 其余配置分别覆盖 NCCL 与 \sysname 在 RDMA 与 NVLink 链路上的 AllGather 性能。
 
-% \begin{table}[h]
-%     \centering
-%     \caption{AllGather 集合通信对计算性能的影响（相对计算性能）}
-%     \label{tab:allgather-compute-impact}
-%     \begin{tabular}{l c}
-%         \toprule
-%         \textbf{通信配置}               & \textbf{相对计算性能} \\
-%         \midrule
-%         Baseline                    & 1.00            \\
-%         \sysname\ AllGather(RDMA)   & 1.00            \\
-%         \sysname\ AllGather(NVLink) & 1.00            \\
-%         NCCL AllGather(RDMA)        & 0.89            \\
-%         NCCL AllGather(NVLink)      & 0.86            \\
-%         \bottomrule
-%     \end{tabular}
-% \end{table}
-
-\begin{figure}[h]
+\begin{figure}[htbp]
     \centering
     \includegraphics[width=0.82\linewidth]{figures/relative_perf_vs_msg_size_broken_y.png}
     \caption{NCCL AllGather 对计算性能的影响}
@@ -258,30 +241,64 @@ AllGather 是张量并行（Tensor Parallelism, TP）等并行策略中最为常
 通信与计算并发执行所带来的资源竞争会反映在 token 生成节奏的波动上。
 因此，该测试场景能够有效放大通信机制差异，并检验系统在真实负载下的稳定性与鲁棒性。
 
-本实验基于 FlashInfer \cite{flashinfer_repo} 算子库，使用 C++ 实现高性能的 PD 分离推理系统\cite{distserve_paper,blitzscale_paper}，
-其整体推理性能与当前学术界和工业界广泛采用的 SOTA 推理系统（如 vLLM）\cite{kwon2023pagedattention} 进行对齐。
-实验选取 Qwen3-32B \cite{Qwen3-32B_model} 模型，重点关注解码（Decode）阶段的推理性能表现。
+本实验基于 FlashInfer \cite{flashinfer_repo} 算子库，
+使用 C++ 实现高性能的 PD 分离推理推理框架\cite{distserve_paper}，
+其整体推理性能与当前学术界和工业界广泛采用的 SOTA 推理系统（如 vLLM）\cite{kwon2023pagedattention} 进行对齐，
+并且分别使用 \sysname 和 NCCL 实现其点对点通信模块，用于 KV Cache 传输和通过网络传输进行的模型扩容。
+在集群管理部分，参考现有工作\cite{blitzscale_paper,llumnix} 实现请求调度策略和模型自动扩缩容的逻辑。
+选取 BurstGPT 作为请求负载\cite{burstgpt}，模拟 MaaS 请求动态变化的场景，
+图 ~\ref{fig:burstgpt-trace} 展示了其请求负载的变化曲线。
+在这个系统上，部署 Qwen3-32B \cite{Qwen3-32B_model} 模型，关注端到端的性能表现。
 
-\subsection{性能指标与评测方法}
+\subsection{端到端性能评测与分析}
 
-在 Decode 阶段，模型以 token 为粒度逐步生成输出，计算与通信在时间轴上高度交织，
-单次通信对计算的干扰往往难以通过整体吞吐直接体现。
-因此，本节选取 \textbf{Time Between Tokens (TBT)} 作为核心性能指标，
-即相邻两个 token 生成之间的平均时间间隔。
-
-TBT 能够直接刻画推理系统在稳态解码过程中的执行节奏，对通信与计算并发所引入的资源竞争高度敏感。
-在通信对计算产生干扰时，部分 token 的生成会被延迟，从而拉高 TBT 并扩大其分布范围，最终体现为端到端推理尾延迟的增加。
-
-\subsection{实验结果与分析}
-
-\begin{figure}[h]
+\begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.82\linewidth]{figures/time_between_tokens.png}
+    \includegraphics[width=0.9\linewidth]{figures/requests_per_second.png}
+    \caption{BurstGPT 请求负载变化曲线}
+    \label{fig:burstgpt-trace}
+\end{figure}
+
+图 ~\ref{fig:ttft-tbt-cdf} 展示了端到端测试场景下，
+\sysname 与 NCCL 在 Time To First Token (TTFT) 和
+Time Between Tokens (TBT) 两项指标上的累积分布函数（CDF）对比。
+\sysname 和 NCCL 的 TTFT 和 TBT 中位数表现接近，
+但 NCCL 在尾部表现出更大的波动，
+
+在 TTFT 指标上，\sysname 相比于 NCCL 的 P50 和 P99 时延分别提升了 3.8\% 和 16\%。
+对于 TTFT，由于系统需要进行 KV Cache 传输，Prefill 节点的计算与通信并行，
+导致 NCCL 在部分请求上出现更长的 TTFT 时延。
+在请求激增导致请求队列堆积、触发模型实例扩容时，Prefill 节点不作为模型参数源节点，因此不存在计算通信并行的情况；
+但是由于 \sysname 相比于 NCCL 有更好的带宽表现，可以在更短的时间内完成模型参数分发，
+请求排队的时间得以缩短，从而降低扩容过程对 TTFT 的影响。
+
+在 TBT 指标上，\sysname 和 NCCL 的 P50 表现接近，
+但 NCCL 在尾时延上出现了更大的波动，\sysname 的 P95 与 P99 时延相较于 NCCL 分别降低了 5.5\% 和 6.9\%。
+TBT 波动主要来源于扩容过程中 Decode 节点计算与通信并发执行，导致 Decode 的性能收到影响。
+并且由于 \sysname 能够更快地完成 KV Cache 传输，
+因此第一个 Decode Token 时延受到的影响较小，从而进一步降低了 TBT 的尾时延。
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\linewidth]{figures/ttft_tbt_cdf_pickle_vs_nccl.png}
+    \caption{端到端推理累积分布函数对比}
+    \label{fig:ttft-tbt-cdf}
+\end{figure}
+
+\subsection{解码性能拆解分析}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\linewidth]{figures/time_between_tokens.png}
     \caption{端到端推理中不同通信实现下的 Time Between Tokens}
     \label{fig:time-between-tokens}
 \end{figure}
 
-图~\ref{fig:time-between-tokens} 展示了在不同通信实现下端到端推理过程中 Time Between Tokens 的统计结果。
+图~\ref{fig:time-between-tokens} 展示了在不同通信实现下，
+端到端推理过程中触发扩容的阶段 Time Between Tokens 性能。
+在推理过程中，由于用户请求激增触发模型实例的在线扩容，
+通过 NVLink 将模型参数从 Decode 节点分发至新实例。
+
 可以观察到，在使用 NCCL 时，TBT 主要分布在约 25--30\,ms 区间内，且在模型扩容与通信并发阶段存在较为明显的波动；
 而采用 \sysname 时，TBT 分布更加集中，整体稳定在约 26\,ms 左右。
 
@@ -293,15 +310,17 @@ TBT 能够直接刻画推理系统在稳态解码过程中的执行节奏，对�
 
 相比之下，\sysname 在端到端测试中表现出更稳定的 TBT 分布。
 由于其通信路径在设计上避免占用 GPU SM，并通过控制面卸载与异步数据搬运机制降低通信对前台计算的干扰，
-即使在通信并发存在的情况下，Decode 阶段的计算节奏仍能够保持相对稳定。
-
-该结果表明 \sysname 在真实推理负载下不仅能够提供高带宽通信能力，
-还能够有效抑制通信对计算阶段的干扰，从而改善端到端推理过程中的稳定性与尾延迟表现。
+即使在通信并发存在的情况下，Decode 阶段的计算性能仍能够保持相对稳定。
 
 \section{本章小结}
-本章围绕 \sysname 在大模型推理场景中的核心目标——提升通信带宽并降低通信对计算的干扰——开展了系统评测。
-在点对点通信实验中，\sysname 在 NVLink 与 RDMA 两类链路上均能够提供稳定的高有效带宽，并在不同消息尺度下保持良好的伸缩性；
-同时，相比 NCCL，\sysname 在节点内 NVLink 场景下显著降低了通信对前台计算的 SM 资源占用与性能干扰。
-在集合通信 AllGather 的干扰分析中，实验进一步验证了 \sysname 在更贴近真实 TP 推理负载的通信形态下同样能够实现计算通信解耦。
-最后，通过端到端 PD 分离推理场景的 TBT 指标评测，本章表明 \sysname 能够在真实负载中保持更稳定的解码节奏并改善尾延迟表现，
-从而验证了控制面卸载与优先级调度等设计在实际推理系统中的有效性。
+本章围绕 \sysname 在分布式大模型推理中\textbf{提升通信带宽并降低通信对计算的干扰}的核心目标进行了评测。
+在点对点通信实验中，\sysname 在节点内 NVLink 与跨节点 RDMA 两类关键链路上均实现了稳定的高有效带宽，
+并在不同消息尺度与并发度下表现出良好的适配性；
+同时，由于 \sysname 采用控制面卸载与异步数据搬运机制，其通信过程对前台计算的 SM 资源占用显著更低，
+从而在并发通信场景下保持了更高的计算稳定性。
+在集合通信 AllGather 的干扰分析中，实验进一步表明：即使在更贴近真实 TP 推理负载的多 GPU 同步与数据交换形态下，
+\sysname 仍能够有效实现计算通信解耦，降低集合通信引入的计算性能损失。
+最后，在面向 MaaS 的端到端 PD 分离推理与在线扩容场景中，
+本章从 TTFT 与 TBT 两项可观测指标出发验证了 \sysname 的实际收益：
+在中位数接近的情况下，\sysname 能够显著改善尾部时延并降低 token 生成速率的波动。
+综上，\sysname 在微基准、干扰分析与端到端评测中均体现出性能优势，验证了其在分布式推理系统中的有效性与实用价值。

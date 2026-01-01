@@ -560,7 +560,7 @@ auto flusher = RdmaFlusher::create(std::move(qp)).unwrap();
 \texttt{notify()} 告知上层应用发送完成。
 这样，应用层看到的发送完成语义始终对应于“整个请求的最后一个分片发送完成”，有效简化了上层使用难度。
 
-\begin{figure}[h]
+\begin{figure}[htbp]
     \centering
     \includegraphics[width=0.6\linewidth]{figures/wrid_encoding.png}
     \caption{工作请求标识符编码示意图}
@@ -834,7 +834,7 @@ GPU 指针的跨进程可见性由 \texttt{NvlinkCopier} 管理，在创建 Copi
 并且随着被映射内存区域增大呈上升趋势：当映射的 buffer 足够大时，单次打开/关闭甚至达到毫秒级，
 这会直接限制 \sysname 在 NVLink 数据面的端到端吞吐，造成显著的 GPU 地址空间管理压力。
 
-\begin{figure}[h]
+\begin{figure}[htbp]
     \centering
     \includegraphics[width=0.8\linewidth]{figures/cuda_ipc_open_close_overhead_vs_size.png}
     \caption{CUDA IPC Open/Close 开销}
