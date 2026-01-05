@@ -1,11 +1,14 @@
+# This is used in the paper
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 from matplotlib.font_manager import FontProperties
 from matplotlib.ticker import MultipleLocator
 
-font = FontProperties(fname=str(Path(__file__).resolve().parent.parent / "SimHei.ttf"))
 font_size = 14
+font = FontProperties(
+    fname=str(Path(__file__).resolve().parent.parent / "SimHei.ttf"), size=font_size
+)
 
 
 def main() -> None:
@@ -18,7 +21,7 @@ def main() -> None:
         1,
         sharex=True,
         figsize=(6, 4),
-        gridspec_kw={"height_ratios": [2, 1], "hspace": 0.1},
+        gridspec_kw={"height_ratios": [2, 1], "hspace": 0.15},
     )
 
     ax_top.axhline(
@@ -29,6 +32,7 @@ def main() -> None:
         ax.plot(qps, nccl_perf, marker="s", label="NCCL" if ax is ax_top else None)
         ax.yaxis.set_major_locator(MultipleLocator(0.04))
         ax.grid(True, linestyle="--", alpha=0.5)
+        ax.tick_params(axis="both", which="both", labelsize=font_size)
 
     ax_top.set_ylim(0.9, 1.01)
     ax_bot.set_ylim(0.0, 0.05)
@@ -51,7 +55,7 @@ def main() -> None:
     ax_top.set_ylabel("相对计算性能", fontsize=font_size, fontproperties=font)
     ax_bot.set_ylabel("")
     ax_bot.set_xticks(qps)
-    ax_top.legend()
+    ax_top.legend(prop=font)
 
     output_path = (
         Path(__file__).resolve().parent.parent

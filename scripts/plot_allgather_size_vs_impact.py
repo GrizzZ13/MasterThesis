@@ -1,3 +1,4 @@
+# This is used in the paper
 """
 transport,payload_bytes,relative_attn_perf,bandwidth_GBps
 NVLink,4096,0.993401,1.1113
@@ -32,8 +33,10 @@ from pathlib import Path
 # ======================
 # Font config
 # ======================
-font = FontProperties(fname=str(Path(__file__).resolve().parent.parent / "SimHei.ttf"))
 font_size = 14
+font = FontProperties(
+    fname=str(Path(__file__).resolve().parent.parent / "SimHei.ttf"), size=font_size
+)
 
 # ======================
 # Data (pure Python list)
@@ -178,7 +181,7 @@ fig, (ax_top, ax_bot) = plt.subplots(
     1,
     sharex=True,
     figsize=(7, 4),
-    gridspec_kw={"height_ratios": [3, 1], "hspace": 0.1},
+    gridspec_kw={"height_ratios": [3, 1], "hspace": 0.15},
 )
 
 # ---- NVLink ----
@@ -186,7 +189,7 @@ ax_top.plot(
     nvlink_sizes,
     nvlink_perf,
     marker="o",
-    label="NVLink",
+    label="NCCL NVLink",
 )
 ax_bot.plot(
     nvlink_sizes,
@@ -199,7 +202,7 @@ ax_top.plot(
     rdma_sizes,
     rdma_perf,
     marker="s",
-    label="RDMA",
+    label="NCCL RDMA",
 )
 ax_bot.plot(
     rdma_sizes,
@@ -214,6 +217,7 @@ for ax in (ax_top, ax_bot):
     ax.set_xscale("log", base=2)
     ax.yaxis.set_major_locator(MultipleLocator(0.1))
     ax.grid(True, which="both", linestyle="--", alpha=0.5)
+    ax.tick_params(axis="both", which="both", labelsize=font_size)
 
 ax_top.set_ylim(0.8, 1.02)
 ax_bot.set_ylim(0.0, 0.1)
@@ -236,13 +240,15 @@ ax_bot.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs)
 
 # X ticks / labels
 ax_bot.set_xticks(sizes)
-ax_bot.set_xticklabels(size_labels, rotation=30, ha="right")
+ax_bot.set_xticklabels(
+    size_labels, rotation=30, ha="right", fontsize=font_size, fontproperties=font
+)
 
 # Labels
 ax_bot.set_xlabel("消息大小", fontsize=font_size, fontproperties=font)
 ax_top.set_ylabel("相对计算性能", fontsize=font_size, fontproperties=font)
 
-ax_top.legend(loc="upper right")
+ax_top.legend(loc="upper right", prop=font)
 
 # ======================
 # Save

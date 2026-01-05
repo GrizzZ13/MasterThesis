@@ -6,9 +6,9 @@
 
 \subsection{大模型推理系统}
 
-大语言模型（Large Language Models, LLMs）的重大突破始于 Transformer \cite{vaswani2017attention} 架构。
-该架构通过完全基于注意力机制的设计，取代了传统循环神经网络在序列建模中的核心地位，
-从而彻底改变了自然语言处理（Natural Language Processing, NLP）领域，
+大语言模型（Large Language Model, LLM）的重大突破始于 Transformer \cite{vaswani2017attention} 架构。
+该架构基于注意力机制，取代了传统循环神经网络（RNN）在序列建模中的核心地位，
+彻底改变了自然语言处理（Natural Language Processing, NLP）领域的技术格局，
 并成为当前几乎所有先进大模型的基础架构。
 
 一个标准的 Transformer 层主要由两个关键子层构成：
@@ -53,9 +53,11 @@ FFN 首先通过一个从 \( d_{\text{model}} \) 到 \( d_{\text{ff}} \) 的线�
 其参数规模通常占据整个 Transformer 层的主要部分。
 此外，FFN 在不同 token 位置上相互独立，不涉及跨 token 的交互，
 因此具备良好的并行性，适合在 GPU 等硬件加速器上高效执行。
+
 Transformer架构在推理阶段存在显著的性能瓶颈。
-首先，标准注意力机制的计算复杂度随序列长度n呈平方方增长，即$O(n^2)$，当处理长文本时，计算成本会急剧上升，
-导致推理速度变慢。其次，Transformer在推理过程中会产生的巨大内存消耗：
+首先，标准注意力机制的计算复杂度随序列长度n呈平方方增长，即$O(n^2)$，
+当处理长文本时，计算成本会急剧上升，导致推理速度变慢。
+其次，Transformer在推理过程中会产生的巨大内存消耗：
 为了加速逐个生成新词元的自回归过程，避免重复计算先前已处理过的词元的K和V向量，通常采用空间换取时间的方式，
 推理系统系统会将这些K和V矩阵缓存起来，形成所谓的“键值缓存”（KV Cache）\cite{aminabadi2022deepspeedinference,yu2022orca,kwon2023pagedattention}。
 KV Cache的大小与多个因素成正比：序列长度（Sequence Length）、批处理大小（Batch Size）、模型层数（Number of Layers）、
@@ -82,43 +84,43 @@ KV Cache不仅是推理效率的核心，更是整个系统资源分配的关键
 大模型推理的分布式部署依赖多种并行策略（如张量并行 TP、专家并行 EP 等）\cite{shoeybi2019megatron,shazeer2017moe,lepikhin2020gshard,fedus2022switch,DeepEP_repo}，
 不同并行模式下的通信语义、数据量与延迟敏感特性存在显著差异。
 同时，预填充（Prefill）与解码（Decode）阶段的计算范式差异（前者批处理并行、后者逐 token 串行）进一步加剧了通信需求的复杂性。
-本节将聚焦张量并行（TP）、专家并行（EP）及预填充-解码分离（Prefill-Decode Disaggregation）三种核心场景，
+本节将聚焦张量并行（TP）、专家并行（EP）及预填充-解码分离（Prefill-Decode Disaggregation, PD）三种核心场景，
 详细分析其通信需求的本质特征。
 
-\subsubsection{张量并行（TP）中的 All-Reduce 通信需求}
+\paragraph{张量并行（TP）中的 AllReduce 通信需求}
 
 张量并行（TP）通过将模型参数部分的层内张量（如 Attention 层的投影矩阵 $W_Q/W_K/W_V/W_O$ 、
 FFN 层的权重矩阵 $W_1/W_2$）切分至多个设备，实现单层计算的并行加速。
-TP 推理的通信瓶颈集中在层间数据聚合阶段，核心依赖 All-Reduce 集合通信操作，其需求特征与计算过程深度耦合。
+TP 推理的通信瓶颈集中在层间数据聚合阶段，核心依赖 AllReduce 集合通信操作，其需求特征与计算过程深度耦合。
 
-在 Transformer 层的计算流程中，All-Reduce 主要用于两个关键环节：
+在 Transformer 层的计算流程中，AllReduce 主要用于两个关键环节：
 
 \begin{enumerate}
       \item Attention 层输出聚合：每个 TP Rank 仅持有部分注意力头权重矩阵和部分输出投影权重矩阵，
             计算得到的 Attention 输出张量同样是完整结果的一个分片。
-            为获得全局 Attention 输出（用于后续 FFN 层计算），需通过 All-Reduce 将所有分片的局部结果求和聚合；
+            为获得全局 Attention 输出（用于后续 FFN 层计算），需通过 AllReduce 将所有分片的局部结果求和聚合；
       \item FFN 层输出聚合：类似地，FFN 层的中间激活张量（如第一层线性变换后的特征图）经 TP 分片并行计算后，
-            需通过 All-Reduce 聚合为完整张量，再进入后续层归一化等流程。
+            需通过 AllReduce 聚合为完整张量，再进入后续层归一化等流程。
 \end{enumerate}
 
-TP 中 All-Reduce 的通信需求具有以下核心特征：
+TP 中 AllReduce 的通信需求具有以下核心特征：
 
 \begin{itemize}
       \item 通信数据量与张量维度强相关：
             通信量与切分后的数据分片大小成正比，即与模型隐藏层维度 \( d_{\text{model}} \)、序列长度 \( S \)
             及批处理大小 \( B \) 正相关。
             以 Attention 层为例，单个 TP 分片的局部输出维度为 \( B \times S \times (d_{\text{model}}/TP\_Size) \)，
-            All-Reduce 需传输的总数据量为 \( TP\_Size \times B \times S \times (d_{\text{model}}/TP\_Size) = B \times S \times d_{\text{model}} \)，
+            AllReduce 需传输的总数据量为 \( TP\_Size \times B \times S \times (d_{\text{model}}/TP\_Size) = B \times S \times d_{\text{model}} \)，
             即与分片数 \( TP\_Size \) 无关，仅由模型与输入规模决定；
       \item 延迟敏感型与吞吐量平衡需求：
-            在 Decode 阶段，TP 推理为逐 token 串行执行，每个 token 的生成需等待 All-Reduce 完成才能进入下一层计算，
+            在 Decode 阶段，TP 推理为逐 token 串行执行，每个 token 的生成需等待 AllReduce 完成才能进入下一层计算，
             因此通信延迟直接决定了推理 latency；
             而在 Prefill 阶段，批处理规模大、计算密集，通信吞吐量（带宽利用率）成为核心瓶颈；
-      \item 通信与计算的重叠潜力：部分 TP 实现支持通信-计算重叠（如将 All-Reduce 的 Reduce 阶段与下一层的部分计算并行），
+      \item 通信与计算的重叠潜力：部分 TP 实现支持通信-计算重叠（如将 AllReduce 的 Reduce 阶段与下一层的部分计算并行），
             但需通信操作具备可拆分性，这对通信协议的灵活性（如支持分段传输、增量聚合）提出了更高要求。
 \end{itemize}
 
-\subsubsection{专家并行（EP）中的 Dispatch-Combine 通信需求}
+\paragraph{专家并行（EP）中的 Dispatch-Combine 通信需求}
 
 专家并行（EP）针对混合专家（MoE）模型设计，将模型的 FFN 层拆分为多个独立“专家”（Expert），并分配至不同设备，
 核心通信操作体现为“Dispatch（分发）”与“Combine（合并）”两个阶段，其需求与专家选择机制深度绑定。
@@ -148,9 +150,9 @@ EP 中 Dispatch-Combine 的通信需求具有以下显著特征：
             这对通信的可靠性与时序一致性提出了严格要求。
 \end{itemize}
 
-\subsubsection{预填充-解码分离（Prefill-Decode Disaggregation）中的 KV Cache 传输需求}
+\paragraph{Prefill-Decode 分离中的 KV Cache 传输}
 
-预填充-解码分离（Prefill-Decode Disaggregation）是一种分布式推理架构优化，
+预填充-解码分离（Prefill-Decode Disaggregation, PD）是一种分布式推理架构优化，
 核心思想是将计算密集型的 Prefill 阶段与访存密集型的 Decode 阶段分别部署在不同节点，
 Prefill 节点负责批量处理输入提示，Decode 节点负责逐 token 生成，
 其核心通信需求是 Prefill 阶段生成的 KV Cache 需跨节点完整迁移至 Decode 节点，为后续逐 token 生成上下文提供依据。
@@ -286,6 +288,6 @@ GPU Direct RDMA 通过消除主机内存中转瓶颈，实现了跨节点 GPU �
 \section{本章小结}
 本章围绕大模型推理的系统形态与关键通信瓶颈展开讨论。
 首先介绍了 Transformer 架构及其在推理阶段的计算与内存特征，指出 KV Cache 在提升解码效率的同时也带来显著的显存与跨阶段迁移压力；
-随后从张量并行、专家并行与 Prefill-Decode 分离等典型场景出发，分析了 All-Reduce、Dispatch/Combine 以及 KV Cache 传输等通信形态在数据规模与延迟敏感性上的差异。
+随后从张量并行、专家并行与预填充-解码分离（PD）等典型场景出发，分析了 AllReduce、Dispatch/Combine 以及 KV Cache 传输等通信形态在数据规模与延迟敏感性上的差异。
 最后，本章系统梳理了面向 GPU 集群的关键互联技术与通信基础设施，包括节点内 NVLink 与跨节点 GPU Direct RDMA 的工作机制与性能特征，
 为后续章节中 \sysname 的链路抽象、控制面卸载与执行器实现提供了必要的技术背景与问题定义。

@@ -1,3 +1,4 @@
+# This is used in the paper
 from itertools import accumulate
 from pathlib import Path
 import random
@@ -5,8 +6,10 @@ import random
 import matplotlib.pyplot as plt
 from matplotlib.font_manager import FontProperties
 
-font = FontProperties(fname=str(Path(__file__).resolve().parent.parent / "SimHei.ttf"))
 font_size = 14
+font = FontProperties(
+    fname=str(Path(__file__).resolve().parent.parent / "SimHei.ttf"), size=font_size
+)
 
 
 def main() -> None:
@@ -74,8 +77,9 @@ def main() -> None:
 
     ax.plot(pickle_timestamps_ms, pickle_duration_ms, label="Pickle NVLink")
     ax.plot(nccl_timestamps_ms, nccl_duration_ms, label="NCCL NVLink")
-    ax.set_xlabel("时间戳 (ms)", fontsize=font_size, fontproperties=font)
-    ax.set_ylabel("Time Between Tokens (ms)", fontsize=font_size, fontproperties=font)
+    ax.set_xlabel("时间（ms）", fontsize=font_size, fontproperties=font)
+    ax.set_ylabel("Token 间隔延迟（ms）", fontsize=font_size, fontproperties=font)
+    ax.tick_params(axis="both", which="both", labelsize=font_size)
     ax.set_ylim(bottom=0, top=35)
     output_path = (
         Path(__file__).resolve().parent.parent / "figures" / "time_between_tokens.png"
@@ -97,7 +101,7 @@ def main() -> None:
     #         va="top",
     #         ha="right",
     #         color="gray",
-    #         fontsize=10,
+    #         fontsize=font_size,
     #         fontproperties=font,
     #     )
 
@@ -124,11 +128,11 @@ def main() -> None:
     )
 
     ax.grid(True, linestyle="--", alpha=0.5)
-    ax.legend()
+    ax.legend(prop=font)
     fig.tight_layout()
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.subplots_adjust(bottom=0.14)
+    fig.subplots_adjust(bottom=0.16)
     fig.savefig(output_path, dpi=300)
     print(f"Saved plot to {output_path}")
 

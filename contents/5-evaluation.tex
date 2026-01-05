@@ -57,12 +57,12 @@ NVLink P2P 测试，主要测量不同消息大小下，\sysname 与 NCCL 的有
 图~\ref{fig:nvlink-bw-vs-size} 给出了有效带宽随消息大小变化的结果。
 在消息较小时，\sysname 和 NCCL 的有效带宽均远低于理论带宽上限，控制面开销占比较高。
 随着消息增大，\sysname 和 NCCL 的有效带宽都逐步增大，但是 \sysname 在中等消息规模下带宽显著高于 NCCL。
-这主要是因为 \sysname 的控制面开销仅涉及 CPU 侧通过共享内存传输控制面信息，然后通过 Copy Enging 触发 NVLink 数据传输，数据面路径更贴近硬件；
+这主要是因为 \sysname 的控制面开销仅涉及 CPU 侧通过共享内存传输控制面信息，然后通过 Copy Engine 触发 NVLink 数据传输，数据面路径更贴近硬件；
 相比之下 NCCL 采用了分片流水、GPU kernel同步、协议握手等机制，引入了一定的固定开销，使其无法完全利用所有的 NVLink 带宽资源；
 
-值得注意的是，没有采取 cudaIpcMemHandle caching 优化的 \sysname 版本，在各个消息规模下的性能，
-都显著低于 NCCL 和带有 caching 优化的 \sysname 版本。
-这主要是因为没有 caching 优化的 \sysname 版本，在每次通信时都需要进行 cudaIpcOpenMemHandle 操作，
+值得注意的是，没有采取 cudaIpcMemHandle 缓存优化的 \sysname 版本，在各个消息规模下的性能，
+都显著低于 NCCL 和带有缓存优化的 \sysname 版本。
+这主要是因为没有缓存优化的 \sysname 版本，在每次通信时都需要进行 cudaIpcOpenMemHandle 操作，
 这一操作涉及用户态和内核态的切换，建立 GPU 内存页表映射等开销，这一系列开销所消耗的时间可以到达毫秒级；
 尤其是映射的内存区域较大时需要映射的页数量众多，带来的开销进一步增大，从而显著影响传输性能。
 
@@ -232,7 +232,7 @@ AllGather 是张量并行（Tensor Parallelism, TP）等并行策略中最为常
 
 \subsection{测试场景与系统设置}
 
-端到端测试面向 MaaS（Model-as-a-Service）\cite{serverlessllm_paper,blitzscale_paper} 场景下的分布式大模型推理系统。
+端到端测试面向模型即服务（Model-as-a-Service, MaaS）\cite{serverlessllm_paper,blitzscale_paper} 场景下的分布式大模型推理系统。
 在该场景中，系统需要应对请求负载的动态变化，并通过在线扩容实例数量来提升整体服务能力。
 扩容过程中，新实例通常需要快速加载模型参数，同时还需与已有实例协同完成推理计算，
 从而使得模型参数传输、KV Cache 交换等通信操作与前台推理计算在时间上高度重叠。
@@ -242,7 +242,7 @@ AllGather 是张量并行（Tensor Parallelism, TP）等并行策略中最为常
 因此，该测试场景能够有效放大通信机制差异，并检验系统在真实负载下的稳定性与鲁棒性。
 
 本实验基于 FlashInfer \cite{flashinfer_repo} 算子库，
-使用 C++ 实现高性能的 PD 分离推理推理框架\cite{distserve_paper}，
+使用 C++ 实现高性能的 PD 分离推理框架\cite{distserve_paper}，
 其整体推理性能与当前学术界和工业界广泛采用的 SOTA 推理系统（如 vLLM）\cite{kwon2023pagedattention} 进行对齐，
 并且分别使用 \sysname 和 NCCL 实现其点对点通信模块，用于 KV Cache 传输和通过网络传输进行的模型扩容。
 在集群管理部分，参考现有工作\cite{blitzscale_paper,llumnix} 实现请求调度策略和模型自动扩缩容的逻辑。
@@ -260,7 +260,7 @@ AllGather 是张量并行（Tensor Parallelism, TP）等并行策略中最为常
 \end{figure}
 
 图 ~\ref{fig:ttft-tbt-cdf} 展示了端到端测试场景下，
-\sysname 与 NCCL 在 Time To First Token (TTFT) 和
+\sysname 与 NCCL 在 Time to First Token (TTFT) 和
 Time Between Tokens (TBT) 两项指标上的累积分布函数（CDF）对比。
 \sysname 和 NCCL 的 TTFT 和 TBT 中位数表现接近，
 但 NCCL 在尾部表现出更大的波动，
@@ -276,7 +276,7 @@ Time Between Tokens (TBT) 两项指标上的累积分布函数（CDF）对比。
 但 NCCL 在尾时延上出现了更大的波动，\sysname 的 P95 与 P99 时延相较于 NCCL 分别降低了 5.5\% 和 6.9\%。
 TBT 波动主要来源于扩容过程中 Decode 节点计算与通信并发执行，导致 Decode 的性能收到影响。
 并且由于 \sysname 能够更快地完成 KV Cache 传输，
-因此第一个 Decode Token 时延受到的影响较小，从而进一步降低了 TBT 的尾时延。
+因此第一个 Decode token 时延受到的影响较小，从而进一步降低了 TBT 的尾时延。
 
 \begin{figure}[htbp]
     \centering

@@ -1,3 +1,4 @@
+# This is used in the paper
 from __future__ import annotations
 
 import csv
@@ -70,7 +71,7 @@ def _plot_cdf(ax, points: list[CdfPoint], *, label: str, color: str) -> None:
 
 
 def main() -> None:
-    font = FontProperties(fname=str(repo_root / "SimHei.ttf"))
+    font = FontProperties(fname=str(repo_root / "SimHei.ttf"), size=font_size)
     ttft_factor = 0.7
     tbt_factor = 0.3
     ttft_pickle_points = _load_cdf_points(
@@ -112,6 +113,7 @@ def main() -> None:
         "首 Token 延迟 TTFT (ms)", fontsize=font_size, fontproperties=font
     )
     ax_ttft.set_ylabel("CDF", fontsize=font_size, fontproperties=font)
+    ax_ttft.tick_params(axis="both", which="both", labelsize=font_size)
     ax_ttft.set_ylim(0, 1.0)
     ax_ttft.grid(True, linestyle="--", alpha=0.5)
     ax_ttft.legend(prop=font)
@@ -132,11 +134,11 @@ def main() -> None:
     ax_tbt.set_xlabel(
         "Token 间隔延迟 TBT (ms)", fontsize=font_size, fontproperties=font
     )
+    ax_tbt.tick_params(axis="both", which="both", labelsize=font_size)
     ax_tbt.grid(True, linestyle="--", alpha=0.5)
-    ax_tbt.legend(prop=font)
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    fig.subplots_adjust(bottom=0.14)
+    fig.subplots_adjust(bottom=0.16)
     fig.savefig(OUTPUT_PATH, dpi=300)
     print(f"Saved plot to {OUTPUT_PATH}")
 

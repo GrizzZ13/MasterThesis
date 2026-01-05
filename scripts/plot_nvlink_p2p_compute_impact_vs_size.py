@@ -1,11 +1,14 @@
+# This is used in the paper
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 from matplotlib.font_manager import FontProperties
 from matplotlib.ticker import MultipleLocator
 
-font = FontProperties(fname=str(Path(__file__).resolve().parent.parent / "SimHei.ttf"))
 font_size = 14
+font = FontProperties(
+    fname=str(Path(__file__).resolve().parent.parent / "SimHei.ttf"), size=font_size
+)
 
 
 def main() -> None:
@@ -71,7 +74,7 @@ def main() -> None:
         1,
         sharex=True,
         figsize=(8, 4),
-        gridspec_kw={"height_ratios": [3, 1], "hspace": 0.1},
+        gridspec_kw={"height_ratios": [3, 1], "hspace": 0.15},
     )
 
     ax_top.axhline(
@@ -87,6 +90,7 @@ def main() -> None:
         ax.set_xscale("log", base=2)
         ax.yaxis.set_major_locator(MultipleLocator(0.1))
         ax.grid(True, which="both", linestyle="--", alpha=0.5)
+        ax.tick_params(axis="both", which="both", labelsize=font_size)
 
     ax_top.set_ylim(0.8, 1.02)
     ax_bot.set_ylim(0.0, 0.1)
@@ -106,11 +110,15 @@ def main() -> None:
     ax_bot.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs)  # bottom-right
 
     ax_bot.set_xticks(sizes)
-    ax_bot.set_xticklabels(size_labels, rotation=30, ha="right")
+    ax_bot.set_xticklabels(
+        size_labels, rotation=30, ha="right", fontsize=font_size, fontproperties=font
+    )
     ax_bot.set_xlabel("消息大小", fontsize=font_size, fontproperties=font)
     ax_top.set_ylabel("相对计算性能", fontsize=font_size, fontproperties=font)
 
-    ax_top.legend(loc="upper left", bbox_to_anchor=(0.02, 0.82), borderaxespad=0.0)
+    ax_top.legend(
+        loc="upper left", bbox_to_anchor=(0.02, 0.82), borderaxespad=0.0, prop=font
+    )
 
     output_path = (
         Path(__file__).resolve().parent.parent

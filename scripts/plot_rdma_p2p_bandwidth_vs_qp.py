@@ -1,10 +1,13 @@
+# This is used in the paper
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 from matplotlib.font_manager import FontProperties
 
-font = FontProperties(fname=str(Path(__file__).resolve().parent.parent / "SimHei.ttf"))
 font_size = 14
+font = FontProperties(
+    fname=str(Path(__file__).resolve().parent.parent / "SimHei.ttf"), size=font_size
+)
 
 
 def main() -> None:
@@ -18,10 +21,11 @@ def main() -> None:
 
     ax.set_xlabel("QP 数量", fontsize=font_size, fontproperties=font)
     ax.set_ylabel("有效带宽 (Gbps)", fontsize=font_size, fontproperties=font)
+    ax.tick_params(axis="both", which="both", labelsize=font_size)
     ax.set_xticks(qps)
     ax.set_ylim(0, 420)
     ax.grid(True, linestyle="--", alpha=0.5)
-    ax.legend()
+    ax.legend(prop=font)
     fig.tight_layout()
 
     output_path = (

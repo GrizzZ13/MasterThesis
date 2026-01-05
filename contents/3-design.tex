@@ -10,7 +10,7 @@
 \section{设计目标}
 
 \sysname 是面向大模型推理场景设计的高性能通信库，其目标是在推理过程中提供高效、稳定、可扩展的节点间数据传输能力。
-与传统的 GPU 通信方式相比\cite{uccl_paper,chen2025iccl,nvshmem_repo,hu2024demystifyingnccl,nccl_repo}，\sysname 采用控制面完全卸载（fully control-plane offloading）的方式，
+与传统的 GPU 通信方式相比\cite{uccl_paper,chen2025iccl,nvshmem_repo,hu2024demystifyingnccl,nccl_repo}，\sysname 采用控制面完全卸载（full control-plane offloading）的方式，
 将通信的发起以及调度工作交由 CPU 线程执行，避免占用 GPU 计算资源，使得推理任务能够最大化地利用 GPU 的算力。
 \sysname 的设计主要具有以下特点：
 

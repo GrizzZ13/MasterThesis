@@ -787,7 +787,7 @@ NVLink 执行器的请求的匹配与调度逻辑与 RDMA 链路的类似，同�
 在这一设计下 NVLink 接收端的控制面完全工作在 CPU 上，而所有 GPU 数据面操作则推迟到 Copier 的线程中执行。
 事件语义与 RDMA 链路保持对齐，应用层始终在发送或接收请求对应的 \texttt{Event} 上等待，直到跨 GPU 内存拷贝完成后才被通知。
 
-\subsection{数据面的实现}
+\subsection{数据面实现}
 
 \subsubsection{拷贝线程执行流程}
 

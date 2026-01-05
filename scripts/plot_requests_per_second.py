@@ -1,3 +1,4 @@
+# This is used in the paper
 from __future__ import annotations
 
 import csv
@@ -73,7 +74,8 @@ def main() -> None:
     ax.bar(xs, ys, width=1.0, align="edge", color="#4C78A8", edgecolor="none")
 
     ax.set_xlabel("时间 (分钟)", fontsize=font_size, fontproperties=font)
-    ax.set_ylabel("请求数", fontsize=font_size, fontproperties=font)
+    ax.set_ylabel("每秒请求数（请求/秒）", fontsize=font_size, fontproperties=font)
+    ax.tick_params(axis="both", which="both", labelsize=font_size)
     ax.set_xlim(0, 300)
     ax.set_ylim(bottom=0)
 

@@ -1,11 +1,14 @@
+# This is used in the paper
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 from matplotlib.font_manager import FontProperties
 from matplotlib.ticker import MultipleLocator
 
-font = FontProperties(fname=str(Path(__file__).resolve().parent.parent / "SimHei.ttf"))
 font_size = 14
+font = FontProperties(
+    fname=str(Path(__file__).resolve().parent.parent / "SimHei.ttf"), size=font_size
+)
 
 
 def main() -> None:
@@ -76,15 +79,18 @@ def main() -> None:
 
     ax.set_xscale("log", base=2)
     ax.set_xticks(sizes)
-    ax.set_xticklabels(size_labels, rotation=30, ha="right")
+    ax.set_xticklabels(
+        size_labels, rotation=30, ha="right", fontsize=font_size, fontproperties=font
+    )
 
     ax.set_xlabel("缓冲区大小", fontsize=font_size, fontproperties=font)
     ax.set_ylabel("延迟 (微秒)", fontsize=font_size, fontproperties=font)
+    ax.tick_params(axis="both", which="both", labelsize=font_size)
     ax.set_ylim(bottom=0)
     ax.yaxis.set_major_locator(MultipleLocator(2000))
 
     ax.grid(True, which="both", linestyle="--", alpha=0.5)
-    ax.legend()
+    ax.legend(prop=font)
 
     output_path = (
         Path(__file__).resolve().parent.parent

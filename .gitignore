@@ -353,3 +353,4 @@ SJTUTeX*/
 venv/
 __pycache__
 .pycache
+main.txt

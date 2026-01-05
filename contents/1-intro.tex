@@ -25,13 +25,13 @@ EP 则专为稀疏激活的混合专家（Mixture of Experts, MoE）架构设计
 这些并行策略常组合使用，以在计算、内存与通信之间取得平衡。
 然而，无论采用何种并行方式，设备间频繁的数据交换都高度依赖底层通信库的性能，使其成为制约大模型推理吞吐与延迟的关键瓶颈。
 
-随着推理系统的不断演进，又进一步演进出了预填充-解码分离（Prefill-Decode Disaggregaton）推理架构\cite{distserve_paper,splitwise_paper}。
+随着推理系统的不断演进，又进一步演进出了预填充-解码分离（Prefill-Decode Disaggregation, PD）推理架构\cite{distserve_paper,splitwise_paper}。
 该架构将推理流程分为计算密集型的预填充（Prefill）阶段和内存密集型的解码（Decode）阶段，并将它们分离到不同的硬件资源上，
 在预填充完成后，需要将产生的键值缓存（KV Cache）从预填充节点传输到解码节点，从而实现对两个阶段的独立优化。
-PD 分离系统相比于 PD 混合（PD-Colocation）系统降低了首个令牌时间（Time-to-first-token, TTFT），提升了系统的令牌吞吐（Token Throughput）。
-然而，PD分离中 KV Cache 的跨界点迁移对于网络传输性能提出了更高的要求，尤其依赖于高带宽、低时延的通信机制。
+PD 分离系统相比于 PD 混合（PD-Colocation）系统降低了首个令牌时间（Time to First Token, TTFT），提升了系统的令牌吞吐（Token Throughput）。
+然而，PD 分离中 KV Cache 的跨界点迁移对于网络传输性能提出了更高的要求，尤其依赖于高带宽、低时延的通信机制。
 
-此外，在模型即服务(Model-as-a-Service，MaaS) \cite{blitzscale_paper,serverlessllm_paper} 的云原生部署环境中，云服务商为了提高资源利用率，可能会采用模型按需部署的方式，
+此外，在模型即服务（Model-as-a-Service, MaaS）\cite{blitzscale_paper,serverlessllm_paper} 的云原生部署环境中，云服务商为了提高资源利用率，可能会采用模型按需部署的方式，
 对于模型推理服务实例根据用户请求用量进行自动扩缩容从而降低成本。为了满足服务等级目标（Service Level Objective），
 在进行模型扩容时的关键点在于加速模型推理实例的启动速度，其中模型参数加载的时间占据了实例启动时间的主要部分。
 为了加速模型参数加载速度，云服务商采用通过网络进行参数传输的优化方式，将模型参数从一些正在运行的 GPU 实例传输到空闲的 GPU 实例上，
@@ -60,7 +60,7 @@ PD 分离系统相比于 PD 混合（PD-Colocation）系统降低了首个令牌
 NCCL（NVIDIA Collective Communication Library）\cite{nccl_repo,hu2024demystifyingnccl}是 NVIDIA 推出的 GPU 集合通信库，
 主要面向多 GPU 与多节点环境下的深度学习训练与高性能计算任务。
 其核心目标是为分布式系统提供高效、可扩展的集合通信（Collective Communication）原语，
-包括 All-Reduce、All-Gather、Reduce、Broadcast 等操作，从而降低通信开销、提升分布式训练效率。
+包括 AllReduce、AllGather、Reduce、Broadcast 等操作，从而降低通信开销、提升分布式训练效率。
 NCCL 针对 NVIDIA GPU 架构进行了深度优化，充分利用 GPU 之间的高速互联技术（如 NVLink\cite{nvidia_nvlink_nvswitch}）、网络互联技术（如 RDMA、GPU Direct RDMA\cite{nvidia2025gpudirectrdma}），
 实现数据在 GPU 内存之间的直接传输，显著减少冗余数据拷贝带来的性能损失。
 此外，NCCL 使用拓扑感知的通信算法，通过自动检测系统拓扑结构构建最优通信路径，确保在不同硬件配置下均能获得接近理论峰值的通信带宽。
@@ -144,7 +144,7 @@ UCCL-P2P 使用 GPU Direct RDMA 技术实现高性能的跨节点 KV Cache 传�
 
 在实现跨节点通信时，\sysname 使用 GPU Direct RDMA 技术，将数据从一个 GPU 直接搬运到另一个节点的 GPU 内存中，
 避免了冗余的数据拷贝操作，并且通过 CPU 进行网卡轮询操作。
-在实现节点内通信时，\sysname 利用基于 Cuda 进程间通信 （Cuda IPC）的 cudaMemcpy，
+在实现节点内通信时，\sysname 利用基于 CUDA 进程间通信（CUDA IPC）的 cudaMemcpy，
 通过 GPU 的拷贝引擎（Copy Engine，CE）避免了直接 Load/Store 带来的 SM 资源占用。
 
 \sysname 实现了异步任务运行时，通过后台工作线程（Worker Thread）处理通信任务的控制面逻辑，驱动数据面的执行。
