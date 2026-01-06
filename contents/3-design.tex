@@ -16,11 +16,11 @@
 
 \begin{itemize}
       \item 异构多链路支持。 \sysname 采用统一的双向通信接口抽象，
-            用户侧仅需通过 \texttt{send()} 与 \texttt{recv()} 两个接口即可完成通信调用。
-            系统内部能够根据硬件环境自动选择使用 GPU Direct RDMA 或 NVLink 作为底层链路，
+            用户侧仅需通过发送（SEND）与接收（RECV）两个接口即可完成通信调用。
+            系统内部能够根据硬件环境自动选择使用 GPUDirect RDMA 或 NVLink 作为底层链路，
             从而在不同网络拓扑下提供统一的编程接口，屏蔽底层差异性、简化开发复杂度。
       \item 良好的可扩展性。 \sysname 采用分层化架构，上层应用接口稳定，底层链路可灵活扩展以及替换。
-            GPU Direct RDMA 和 NVLink 链路的实现遵循统一调度接口和双向通信抽象，并通过良好抽象支持未来更多链路的无缝接入。
+            GPUDirect RDMA 和 NVLink 链路的实现遵循统一调度接口和双向通信抽象，并通过良好抽象支持未来更多链路的无缝接入。
       \item 基于现代 C++ 实现，保证安全性与高可靠性。
             贯彻现代 C++ 的 RAII 原则自动管理资源生命周期，减少手动管理带来的风险。
             为了在高并发场景下保持性能，系统内部广泛采用无锁队列与细粒度的并发控制机制，
@@ -82,7 +82,7 @@
 应用接口层显式暴露了优先级概念，
 使用户或上层框架能够根据任务性质（如延迟敏感型控制消息、带宽密集型参数传输等）设置不同优先级。
 进行调度时根据不同优先级进行决策，实现基于优先级的流量管理和跨通道的带宽分配策略。
-这样的设计不仅使系统能够满足多种通信模式的不同性能需求，还为实现服务质量控制（QoS）奠定了关键基础\cite{parekh1993gps}。
+这样的设计不仅使系统能够满足多种通信模式的不同性能需求，还为实现服务质量控制（Quality of Service, QoS）奠定了关键基础\cite{parekh1993gps}。
 相比仅依赖物理链路级别的调度策略，以逻辑通道为中心的优先级表达能够提供更细粒度的控制能力，
 更适合现代大模型推理中高度动态且层次丰富的通信模式。
 
@@ -320,7 +320,7 @@ RDMA 链路执行器负责在跨节点 GPU 之间建立一条完全由网卡驱�
 
 \subsection{Receiver-Initiated 控制模式}
 
-在 RDMA 通信中，单边写（one-sided write）操作天然适合构建
+在 RDMA 通信中，单边写操作（one-sided RDMA Write）天然适合构建
 接收方准备缓冲区、发送方主动写入的协作模式。
 RDMA Write 只要求发送方掌握远端缓冲区的地址与访问令牌，
 即可在对端 CPU 与 GPU 完全无感知的前提下完成写入。
@@ -375,7 +375,7 @@ RDMA Write 只要求发送方掌握远端缓冲区的地址与访问令牌，
 这样，$\mathrm{updateQueues}()$ 在逻辑上完成了“应用层请求 $\Rightarrow \mathit{Local}$”和
 “跨节点控制报文 $\Rightarrow \mathit{Remote}$”的双向更新：
 \begin{itemize}
-      \item RDMA 双边操作 Send/Recv 仅承载轻量级的控制信息（接收描述符），
+      \item 双边操作 RDMA Send/ RDMA Recv 仅承载轻量级的控制信息（接收描述符），
             不参与大规模数据搬运，避免了控制面对数据面带宽的挤占；
       \item 一旦描述符抵达，发送端就可以在完全本地的视角下同时看到 $\mathit{Local}$ 与 $\mathit{Remote}$ 的最新状态，
             从而依据统一算法进行匹配与分片。
@@ -394,7 +394,7 @@ $Q^{\mathrm{remote}}_{id}$ 中记录的源地址、目的地址及长度，构�
       \item \textbf{DMA 搬运}：实际数据传输由 RNIC 在两端 GPU 显存之间通过 DMA 完成，
             CPU 只负责构造和提交工作请求；
       \item \textbf{可批量提交}：多个分片可以在一次轮询片段内被组织成一个 WR list，
-            通过一次 doorbell 动作整体提交给 RNIC，从而减少 CPU–NIC 间的交互开销\cite{nvidia2025gpudirectrdma,nvidia2025gdrdoc,kalia2016rdma_design_guidelines}。
+            通过一次 doorbell 动作整体提交给 RNIC，从而减少 CPU-NIC 间的交互开销\cite{nvidia2025gpudirectrdma,nvidia2025gdrdoc,kalia2016rdma_design_guidelines}。
 \end{itemize}
 
 抽象算法中的在途量约束参数 $N$ 在这里自然对应“当前允许运行中的 RDMA Write 任务数量上限”。
@@ -414,16 +414,16 @@ RDMA Write 操作的局限是完成事件只在发送方本地可见。
 这与算法中要求的“在最后一个分片提交后，向两侧交付统一的完成语义”之间存在差距。
 
 为弥补这一差距，RDMA 链路执行器将 $\mathrm{EmitSignal}(c,\mathit{Events}[id])$ 映射为：
-在逻辑请求的最后一个分片上，使用带立即数的 RDMA Write（RDMA Write with Immediate） 以通知接收端：
+在逻辑请求的最后一个分片上，使用带立即数的 RDMA 写操作（RDMA Write with Imm） 以通知接收端：
 \begin{itemize}
       \item 从发送端视角看，最后一个分片仍然是一次 RDMA Write 操作，
             其完成事件会出现在本地完成队列上，用于触发本地事件并回收资源；
-      \item 从接收端视角看，该操作同时在接收端的 RDMA Recv 队列上生成一条带立即数的完成事件，
+      \item 从接收端视角看，该操作同时在其 RDMA 接收队列上生成一条带立即数的完成事件，
             相当于“在数据全部写入后自动附带了一条控制通知”，弥补了 RDMA Write 的局限性，
             接收方可以通过解析该立即数恢复逻辑通道标识符或请求编号，并触发对应的本地事件。
 \end{itemize}
 
-然而在 GPU Direct RDMA 场景下，RDMA Write with Imm 在 RNIC 侧完成并触发 CQE 时，
+然而在 GPUDirect RDMA 场景下，RDMA Write with Imm 在 RNIC 侧完成并触发 CQE 时，
 并不一定意味着对应的数据写入已被 GPU 设备可见。
 根本原因是 PCIe 规范允许对不同目标地址的写操作进行乱序处理。
 虽然网卡可能已经向 GPU 发出了 DMA 写请求，但这些写请求在 PCIe 上传输到 GPU 内存前可能会被延后；
@@ -439,7 +439,7 @@ RDMA Write 操作的局限是完成事件只在发送方本地可见。
 因此，$\mathrm{EmitSignal}(\cdot)$ 在 RDMA 上的含义可以概括为：
 \begin{itemize}
       \item 将“这是该逻辑请求的最后一个分片”的信息编码进最后一次写操作；
-      \item 通过 RDMA Write with Immediate 在不增加额外控制报文 RTT （Round Trip Time）的前提下，
+      \item 通过 RDMA Write with Imm 在不增加额外控制报文 RTT （Round Trip Time）的前提下，
             同时为发送端和接收端提供一次同步的完成通知；
       \item 在链路执行器内部，将这次完成事件与算法中的 $\mathit{Events}[id]$ 关联，
             对应用接口层呈现出统一的“请求完成”事件语义。
@@ -447,15 +447,15 @@ RDMA Write 操作的局限是完成事件只在发送方本地可见。
 
 综上，统一的请求匹配与分片调度算法在 RDMA 链路上的落地可以理解为：
 \begin{itemize}
-      \item 基于 RDMA 双边操作的 Send/Recv 原语进行控制面通信维护跨节点的 $\mathit{Remote}$ 队列；
+      \item 基于 RDMA 双边操作的 RDMA Send/ RDMA Recv 原语进行控制面通信维护跨节点的 $\mathit{Remote}$ 队列；
       \item 在发送端依据 $\mathit{Local}$ 与 $\mathit{Remote}$ 进行分片匹配，
             并用受最大在途量约束的 RDMA Write 工作请求构造工作请求列表批量提交这些分片；
-      \item 在最后一个分片上使用 RDMA Write with Immediate 实现的 $\mathrm{EmitSignal}$，
+      \item 在最后一个分片上使用 RDMA Write with Imm 实现的 $\mathrm{EmitSignal}$，
             将逻辑完成语义精确映射到两端的事件机制之上。
 \end{itemize}
 
 在这一映射关系下，\sysname 不需要暴露任何 RDMA 细节给应用层，
-便能够在跨节点 GPU Direct RDMA 通道上复用统一的逻辑通道抽象、优先级调度与粗粒度抢占机制，
+便能够在跨节点 GPUDirect RDMA 通道上复用统一的逻辑通道抽象、优先级调度与粗粒度抢占机制，
 并保持 SM-free、高带宽与低时延的整体特性。
 
 \section{NVLink 链路执行器设计}

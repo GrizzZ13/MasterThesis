@@ -84,7 +84,7 @@ KV Cache不仅是推理效率的核心，更是整个系统资源分配的关键
 大模型推理的分布式部署依赖多种并行策略（如张量并行 TP、专家并行 EP 等）\cite{shoeybi2019megatron,shazeer2017moe,lepikhin2020gshard,fedus2022switch,DeepEP_repo}，
 不同并行模式下的通信语义、数据量与延迟敏感特性存在显著差异。
 同时，预填充（Prefill）与解码（Decode）阶段的计算范式差异（前者批处理并行、后者逐 token 串行）进一步加剧了通信需求的复杂性。
-本节将聚焦张量并行（TP）、专家并行（EP）及预填充-解码分离（Prefill-Decode Disaggregation, PD）三种核心场景，
+本节将聚焦张量并行（TP）、专家并行（EP）及预填充-解码分离（Prefill-Decode Disaggregation, PD 分离）三种核心场景，
 详细分析其通信需求的本质特征。
 
 \paragraph{张量并行（TP）中的 AllReduce 通信需求}
@@ -152,7 +152,7 @@ EP 中 Dispatch-Combine 的通信需求具有以下显著特征：
 
 \paragraph{Prefill-Decode 分离中的 KV Cache 传输}
 
-预填充-解码分离（Prefill-Decode Disaggregation, PD）是一种分布式推理架构优化，
+预填充-解码分离（Prefill-Decode Disaggregation, PD 分离）是一种分布式推理架构优化，
 核心思想是将计算密集型的 Prefill 阶段与访存密集型的 Decode 阶段分别部署在不同节点，
 Prefill 节点负责批量处理输入提示，Decode 节点负责逐 token 生成，
 其核心通信需求是 Prefill 阶段生成的 KV Cache 需跨节点完整迁移至 Decode 节点，为后续逐 token 生成上下文提供依据。
@@ -198,7 +198,7 @@ rkey 就像一把授权钥匙，只有持有正确 rkey 的节点才能对该内
 保护域则为一组相关的 RDMA 资源（如多个 MR、QP、CQ 等）提供了一个更高层次的安全边界。
 只有属于同一个 PD 的资源才能相互协作，这有效防止了未经授权的跨域访问。
 
-RDMA API 提供了两类不同的通信模型。第一种是双边（Two-Sided）模型，其代表操作是 SEND 和 RECV。
+RDMA API 提供了两类不同的通信模型。第一种是双边（Two-Sided）模型，其代表操作是 RDMA Send 和 RDMA Recv。
 这种模式类似于传统的 RPC 调用，要求通信双方协同工作。
 发送方将数据写入自己的应用缓冲区，并通过 \texttt{post\_send()} 将其作为一个 WR 提交到本地的 SQ；
 与此同时，接收方必须预先通过 \texttt{post\_recv()} 将自己期望接收数据的缓冲区作为一个 WR 提交到本地的 RQ，以做好准备。
@@ -206,17 +206,17 @@ RDMA API 提供了两类不同的通信模型。第一种是双边（Two-Sided�
 随后，接收方 RNIC 会发送一个 ACK 包确认收到数据，发送方在收到这个 ACK 后，才会在自己的 CQ 中看到其发送 WR 的完成事件。
 这种方式虽然同步性好，但是引入了显著的 CPU 开销，接收方的 CPU 必须主动准备接收缓冲区，在高负载的情况下可能会导致 CPU 成为通信瓶颈。
 
-第二种是单边（One-Sided）模型，其代表操作是 READ、WRITE 和 ATOMIC，这是 RDMA 最开创性的一点。
+第二种是单边（One-Sided）模型，其代表操作是 RDMA Read、RDMA Write 和 RDMA Atomic，这是 RDMA 最开创性的一点。
 在这种模式下，通信仅由发起方（Initiator）单方面完成，整个过程无需目标节点（Responder）的 CPU 参与。
 发起方只需事先通过带外信道（Out-of-band Communication，通常基于 TCP 实现）获取到目标内存的虚拟地址和 \texttt{rkey}，
-之后即可通过一个 WR 直接读取或写入远程节点的内存。例如，在 RDMA WRITE 操作中，发起方的 RNIC 会直接从本地源内存读取数据，
+之后即可通过一个 WR 直接读取或写入远程节点的内存。例如，在 RDMA Write 操作中，发起方的 RNIC 会直接从本地源内存读取数据，
 封装成网络包发送出去，目标节点的 RNIC 收到后，直接将数据写入指定的远程内存地址。
-在这个过程中，目标节点的 CPU 处于无感知状态，不需要预先准备接收缓冲区（对于 WRITE 操作），极大地降低了延迟和 CPU 消耗。
+在这个过程中，目标节点的 CPU 处于无感知状态，不需要预先准备接收缓冲区（对于 RDMA Write 操作），极大地降低了延迟和 CPU 消耗。
 
 \section{GPU 通信}
 
 随着深度学习模型规模的不断增加，单个 GPU 的计算能力和内存容量已难以满足大规模模型训练与推理的需求，多 GPU 系统已成为主流解决方案。
-为实现高效的 GPU 通信，现代 GPU 架构引入了 NVLink 与 GPU 直接远程直接内存访问（GPU Direct RDMA, GDR）技术\cite{nvidia_nvlink_nvswitch,nvidia2025gpudirectrdma,maltenberger2022sortinginterconnects}，
+为实现高效的 GPU 通信，现代 GPU 架构引入了 NVLink 与 GPU 直接远程直接内存访问（GPUDirect RDMA, GDR）技术\cite{nvidia_nvlink_nvswitch,nvidia2025gpudirectrdma,maltenberger2022sortinginterconnects}，
 实现了纵向扩展（scale-up）网络与横向扩展（scale-out）网络的超高通信性能。
 
 \subsection{NVLink}
@@ -242,12 +242,12 @@ NVLink 技术持续迭代演进。以当前主流的 NVLink 4.0（应用于 NVID
 内部双向带宽高达 3.6 TB/s，为超大规模模型训练和推理提供了前所未有的片内扩展能力。
 
 此外，NVLink 协议栈支持高级通信语义，包括远程内存访问（Remote Memory Access, RMA）、细粒度一致性协议，
-以及与集合通信操作（如 all-reduce、all-gather）深度集成的硬件加速机制。结合 NVSwitch 构建的 non-blocking、低延迟交换网络，
+以及与集合通信操作（如 AllReduce、AllGather）深度集成的硬件加速机制。结合 NVSwitch 构建的 non-blocking、低延迟交换网络，
 NVLink 不仅实现了单节点内极致的 scale-up 性能，也为构建跨节点的 AI 超级计算机（如 NVIDIA DGX SuperPOD）奠定了高性能通信基础。
 
-\subsection{GPU Direct RDMA}
+\subsection{GPUDirect RDMA}
 
-GPU Direct RDMA \cite{nvidia2025gpudirectrdma,nvidia2025gdrdoc} 是 NVIDIA 为提升多节点（multi-node）GPU 系统通信效率而推出的一项关键技术。
+GPUDirect RDMA \cite{nvidia2025gpudirectrdma,nvidia2025gdrdoc} 是 NVIDIA 为提升多节点（multi-node）GPU 系统通信效率而推出的一项关键技术。
 它允许远程网络适配器（支持 RDMA 的 InfiniBand 或 RoCE 网卡）直接读写 GPU 显存，无需通过主机 CPU 或系统内存中转数据，
 从而显著降低通信延迟、减少 CPU 负载，并提升整体带宽利用率。
 GDR 是构建高性能、可扩展的横向扩展（scale-out）AI 与 HPC 系统的核心通信基础设施。
@@ -282,12 +282,12 @@ GDR 的性能优势在大规模分布式训练场景中尤为显著。以基于 
 以及应用程序或通信库对 GDR API 的显式或隐式调用。
 随着 UCX\cite{ucx2025tagapi,mpiucx2024multipath}（Unified Communication X）等统一通信框架的普及，GDR 的部署门槛正逐步降低，已成为现代 AI 集群的标配通信能力。
 
-GPU Direct RDMA 通过消除主机内存中转瓶颈，实现了跨节点 GPU 显存的直接、高效、低延迟访问，
+GPUDirect RDMA 通过消除主机内存中转瓶颈，实现了跨节点 GPU 显存的直接、高效、低延迟访问，
 是构建超大规模分布式 AI 与 HPC 系统不可或缺的关键技术。
 
 \section{本章小结}
 本章围绕大模型推理的系统形态与关键通信瓶颈展开讨论。
 首先介绍了 Transformer 架构及其在推理阶段的计算与内存特征，指出 KV Cache 在提升解码效率的同时也带来显著的显存与跨阶段迁移压力；
-随后从张量并行、专家并行与预填充-解码分离（PD）等典型场景出发，分析了 AllReduce、Dispatch/Combine 以及 KV Cache 传输等通信形态在数据规模与延迟敏感性上的差异。
-最后，本章系统梳理了面向 GPU 集群的关键互联技术与通信基础设施，包括节点内 NVLink 与跨节点 GPU Direct RDMA 的工作机制与性能特征，
+随后从张量并行、专家并行与 PD 分离等典型场景出发，分析了 AllReduce、Dispatch/Combine 以及 KV Cache 传输等通信形态在数据规模与延迟敏感性上的差异。
+最后，本章系统梳理了面向 GPU 集群的关键互联技术与通信基础设施，包括节点内 NVLink 与跨节点 GPUDirect RDMA 的工作机制与性能特征，
 为后续章节中 \sysname 的链路抽象、控制面卸载与执行器实现提供了必要的技术背景与问题定义。

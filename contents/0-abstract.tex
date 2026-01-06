@@ -7,7 +7,7 @@
   本文面向该场景设计并实现高性能通信库\sysname。
 
   \sysname 以控制面完全卸载为核心，将通信发起与调度交由 CPU 后台线程处理，GPU 侧仅负责数据搬运；
-  跨节点采用 GPU Direct RDMA 实现显存到显存传输，
+  跨节点采用 GPUDirect RDMA 实现显存到显存传输，
   节点内基于 CUDA 进程间通信并利用拷贝引擎驱动 NVLink，通过句柄缓存降低映射开销。
   为适配复杂流量，系统实现异步运行时与支持抢占的优先级调度器，并以统一的发送/接收接口屏蔽多链路差异。
 
@@ -23,13 +23,13 @@
   Existing GPU communication libraries often keep communication control logic on the GPU under inference workloads, which can contend with foreground kernels for compute resources and makes it difficult to schedule traffic by importance, thereby limiting throughput and amplifying tail latency.
   To address this, this thesis designs and implements a high-performance communication library, \sysname, for large-model inference.
 
-  The key idea of \sysname is full control-plane offloading: communication initiation and scheduling are handled by CPU background threads, while the GPU is responsible only for data movement.
-  For inter-node communication, \sysname adopts GPU Direct RDMA to enable GPU memory-to-memory transfers.
+  The key idea of \sysname{} is full control-plane offloading: communication initiation and scheduling are handled by CPU background threads, while the GPU is responsible only for data movement.
+  For inter-node communication, \sysname{} adopts GPUDirect RDMA to enable GPU memory-to-memory transfers.
   For intra-node communication, it leverages CUDA inter-process communication and drives NVLink via copy engines, reducing mapping overhead through handle caching.
   To accommodate complex traffic patterns, the system provides an asynchronous runtime and a preemptive priority scheduler, and exposes a unified send/receive interface to hide differences across multiple links.
 
-  Experiments show that \sysname achieves point-to-point bandwidth comparable to or better than the baseline system.
-  We further evaluate computation--communication overlap: under the same configuration, \sysname does not degrade compute performance, whereas the baseline incurs up to about 17\% compute slowdown.
+  Experiments show that \sysname{} achieves point-to-point bandwidth comparable to or better than the baseline system.
+  We further evaluate computation--communication overlap: under the same configuration, \sysname{} does not degrade compute performance, whereas the baseline incurs up to about 17\% compute slowdown.
   In end-to-end decoding, the distribution of inter-token generation intervals is more concentrated and stable.
-  These results indicate that \sysname can maintain efficient data transfer while avoiding interference with computation, providing a communication foundation for high-throughput and low-tail-latency inference.
+  These results indicate that \sysname{} can maintain efficient data transfer while avoiding interference with computation, providing a communication foundation for high-throughput and low-tail-latency inference.
 \end{abstract}

@@ -25,10 +25,10 @@ EP 则专为稀疏激活的混合专家（Mixture of Experts, MoE）架构设计
 这些并行策略常组合使用，以在计算、内存与通信之间取得平衡。
 然而，无论采用何种并行方式，设备间频繁的数据交换都高度依赖底层通信库的性能，使其成为制约大模型推理吞吐与延迟的关键瓶颈。
 
-随着推理系统的不断演进，又进一步演进出了预填充-解码分离（Prefill-Decode Disaggregation, PD）推理架构\cite{distserve_paper,splitwise_paper}。
+随着推理系统的不断演进，又进一步演进出了预填充-解码分离（Prefill-Decode Disaggregation, PD 分离）推理架构\cite{distserve_paper,splitwise_paper}。
 该架构将推理流程分为计算密集型的预填充（Prefill）阶段和内存密集型的解码（Decode）阶段，并将它们分离到不同的硬件资源上，
 在预填充完成后，需要将产生的键值缓存（KV Cache）从预填充节点传输到解码节点，从而实现对两个阶段的独立优化。
-PD 分离系统相比于 PD 混合（PD-Colocation）系统降低了首个令牌时间（Time to First Token, TTFT），提升了系统的令牌吞吐（Token Throughput）。
+PD 分离系统相比于预填充-解码共置的 PD 混合（Prefill-Decode Colocation, PD 混合）系统降低了首个令牌时间（Time to First Token, TTFT），提升了系统的令牌吞吐（Token Throughput）。
 然而，PD 分离中 KV Cache 的跨界点迁移对于网络传输性能提出了更高的要求，尤其依赖于高带宽、低时延的通信机制。
 
 此外，在模型即服务（Model-as-a-Service, MaaS）\cite{blitzscale_paper,serverlessllm_paper} 的云原生部署环境中，云服务商为了提高资源利用率，可能会采用模型按需部署的方式，
@@ -61,7 +61,7 @@ NCCL（NVIDIA Collective Communication Library）\cite{nccl_repo,hu2024demystify
 主要面向多 GPU 与多节点环境下的深度学习训练与高性能计算任务。
 其核心目标是为分布式系统提供高效、可扩展的集合通信（Collective Communication）原语，
 包括 AllReduce、AllGather、Reduce、Broadcast 等操作，从而降低通信开销、提升分布式训练效率。
-NCCL 针对 NVIDIA GPU 架构进行了深度优化，充分利用 GPU 之间的高速互联技术（如 NVLink\cite{nvidia_nvlink_nvswitch}）、网络互联技术（如 RDMA、GPU Direct RDMA\cite{nvidia2025gpudirectrdma}），
+NCCL 针对 NVIDIA GPU 架构进行了深度优化，充分利用 GPU 之间的高速互联技术（如 NVLink\cite{nvidia_nvlink_nvswitch}）、网络互联技术（如 RDMA、GPUDirect RDMA\cite{nvidia2025gpudirectrdma}），
 实现数据在 GPU 内存之间的直接传输，显著减少冗余数据拷贝带来的性能损失。
 此外，NCCL 使用拓扑感知的通信算法，通过自动检测系统拓扑结构构建最优通信路径，确保在不同硬件配置下均能获得接近理论峰值的通信带宽。
 作为主流深度学习框架（如 PyTorch 和 TensorFlow）的底层通信模块，NCCL 已成为 GPU 集群环境中高性能集合通信的事实标准，
@@ -129,7 +129,7 @@ RNIC 在收到 doorbell 后，利用 GPUDirect RDMA 直接从 GPU 内存中读�
 \paragraph{UCCL-P2P}
 UCCL-P2P \cite{uccl_paper,uccl_repo} 项目是加州大学伯克利分校的 Sky Computing Lab 提出的高性能 KV Cache 传输引擎，
 提供了 SM-free 的特性，轻量级的项目代码，以及易用性强的编程接口。
-UCCL-P2P 使用 GPU Direct RDMA 技术实现高性能的跨节点 KV Cache 传输，
+UCCL-P2P 使用 GPUDirect RDMA 技术实现高性能的跨节点 KV Cache 传输，
 与 NCCL 不同的是 UCCL-P2P通过控制面卸载\cite{uccl_kv_transfer_engine_blog}（Control Plane Offloading）技术，
 完全消除了 GPU SM 在数据传输过程中的参与，避免了通信任务与计算任务的资源竞争，从而提升了大模型推理系统的整体性能。
 但是 UCCL-P2P 目前仅支持 SM-free 的 RDMA 通信模式，目前不支持节点内多 GPU 之间通过 NVLink 进行 SM-free 的高带宽通信，
@@ -142,7 +142,7 @@ UCCL-P2P 使用 GPU Direct RDMA 技术实现高性能的跨节点 KV Cache 传�
 将驱动数据传输的控制面逻辑完全卸载到 CPU 上，避免通信任务控制面与计算任务的资源竞争，
 并且在数据传输时充分考虑到流量的优先级问题，从而优化大模型推理系统的整体性能。
 
-在实现跨节点通信时，\sysname 使用 GPU Direct RDMA 技术，将数据从一个 GPU 直接搬运到另一个节点的 GPU 内存中，
+在实现跨节点通信时，\sysname 使用 GPUDirect RDMA 技术，将数据从一个 GPU 直接搬运到另一个节点的 GPU 内存中，
 避免了冗余的数据拷贝操作，并且通过 CPU 进行网卡轮询操作。
 在实现节点内通信时，\sysname 利用基于 CUDA 进程间通信（CUDA IPC）的 cudaMemcpy，
 通过 GPU 的拷贝引擎（Copy Engine，CE）避免了直接 Load/Store 带来的 SM 资源占用。

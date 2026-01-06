@@ -247,14 +247,6 @@ ConcurrentQueue 的无锁特性保证了接口层的请求提交端完全无阻�
 同时，其基于 C++ 原子语义的实现确保不同线程间的生产-消费关系具有清晰的内存可见性边界，
 避免出现乱序加载导致的请求丢失或重复消费。
 
-% 接口层的另一个关键工作是维护内存访问凭证的查询功能。
-% 在 RDMA 场景下，发送者需要从 MemoryRegion 中查询本地地址对应的 lkey，
-% 而接收者需要查询接收缓冲区对应的 rkey，内存访问凭证是 lkey 和 rkey；
-% 而在 NVLink 场景下，执行器会利用 CUDA IPC 机制获取到的 \texttt{cudaIpcMemHandle\_t} 进行跨进程的内存拷贝，
-% 内存访问凭证是 \texttt{cudaIpcMemHandle\_t} 。
-% 因此接口层使用的 \texttt{lookup\_key()} 尽管名称相同，但在不同后端会直接分派至不同的实现路径。
-% 通过这种统一接口 + 手动分派的策略，\sysname 在保证高性能的前提下实现了透明的跨链路语义。
-
 接口层与运行时之间的边界十分清晰。运行时不会干预 \texttt{send()} / \texttt{recv()} 的逻辑构造，
 也不关心底层使用的是 RDMA libibverbs 还是通过 NVLink 的进行跨 GPU 的内存拷贝。
 运行时仅负责保证 \texttt{poll()} 方法在绑定线程上按固定频率执行，
@@ -274,7 +266,7 @@ ConcurrentQueue 的无锁特性保证了接口层的请求提交端完全无阻�
 RDMA 链路执行器的实现分为两层：
 底层的 \texttt{rdma\_util} 封装 \texttt{libibverbs} 接口并以 RAII 管理 RDMA 资源，
 上层的 \texttt{executor\_rdma} 则利用这些抽象构建发送端 \texttt{RdmaSender}、
-接收端 \texttt{RdmaRecver} 以及维护 GPU Direct RDMA 一致性的 \texttt{RdmaFlusher}。
+接收端 \texttt{RdmaRecver} 以及维护 GPUDirect RDMA 一致性的 \texttt{RdmaFlusher}。
 初始化阶段的核心任务包括：创建 RDMA 基础资源、完成 QP 握手、分配控制面缓冲区及 MR 注册。
 
 \paragraph{RDMA 基础资源创建}
@@ -373,7 +365,7 @@ auto mr = MemoryRegion::create(pd, std::move(buf), size).unwrap();
 
 \paragraph{RdmaFlusher 实现}
 
-GPU Direct RDMA 的完成语义需要额外区分“网卡侧完成”与“设备侧可见”：
+GPUDirect RDMA 的完成语义需要额外区分“网卡侧完成”与“设备侧可见”：
 RDMA Write with Imm 在 CPU 侧产生 CQE 仅说明该写入请求在 RNIC 侧完成，
 但其通过 PCIe DMA 写入 GPU 显存后的可见性仍可能受写合并、乱序与设备侧缓存行为等因素影响。
 因此，若应用直接将 CQE 作为“数据可消费”的判据，则在极端情况下可能观察到旧值或不完整数据。
@@ -417,26 +409,6 @@ auto flusher = RdmaFlusher::create(std::move(qp)).unwrap();
 由核心运行时线程池以绑定式线程模型在独立线程中推进。
 
 发送端 \texttt{RdmaSender} 的运行主逻辑封装在 \texttt{poll()} 中，通过依次调用四个内部函数推进状态：
-
-% \begin{figure}[htbp]
-%     \centering
-%     \begin{minted}[
-%         frame=lines,
-%         linenos,
-%         fontsize=\small,
-%         numbersep=10pt,
-%         framesep=3mm
-%     ]{cpp}
-% void RdmaSender::poll() {
-%   this->drain_remote_recv_requests();
-%   this->drain_local_send_requests();
-%   this->build_and_post();
-%   this->handle_completions();
-% }
-%     \end{minted}
-%     \caption{RdmaSender 运行主逻辑}
-%     \label{fig:rdma-sender-poll}
-% \end{figure}
 
 \paragraph{\texttt{drain\_remote\_recv\_requests()}}
 负责从 RDMA Recv 队列取出由接收端发来的 \texttt{RdmaTicket}，
@@ -584,8 +556,8 @@ auto flusher = RdmaFlusher::create(std::move(qp)).unwrap();
 \begin{enumerate}
     \item 从待处理队列中取出一条 ticket，将其序列化写入控制面发送缓冲区；
     \item 获取一个空闲的工作请求槽位；
-    \item 在空闲槽位发布接收工作请求（Recv WR），用于接收发送端 RDMA Write with Imm 操作的立即数数据；
-    \item 在空闲槽位发布发送工作请求（Send WR），将该 ticket 作为控制面消息发送给发送端。
+    \item 在空闲槽位发布接收工作请求（RDMA Recv WR），用于接收发送端 RDMA Write with Imm 操作的立即数数据；
+    \item 在空闲槽位发布发送工作请求（RDMA Send WR），将该 ticket 作为控制面消息发送给发送端。
 \end{enumerate}
 通过同时发布这两类 WR，接收端能够在数据面尚未到达之前，就准备好控制面信号缓冲区。
 
@@ -598,7 +570,7 @@ auto flusher = RdmaFlusher::create(std::move(qp)).unwrap();
 完成语义的触发则取决于是否启用了 \texttt{RdmaFlusher}。
 若未启用，算法会立即对完成的请求携带的事件执行 \texttt{notify()}，将命令完成同步给应用层；
 若启用了 \texttt{RdmaFlusher}，则将 RDMA 写入的地址与键值交由其处理，
-以通过额外的 RDMA Read 操作确保 GPU Direct RDMA 的可见性。
+以通过额外的 RDMA Read 操作确保 GPUDirect RDMA 的可见性。
 通过将“网络写完成”与“GPU 可见”两个语义显式解耦，该设计使接收端能够在不同硬件环境中保持一致的控制面行为，
 同时在具备 GPU 设备内存的场景下提供强一致的数据可见性保障。
 
@@ -856,7 +828,7 @@ GPU 指针的跨进程可见性由 \texttt{NvlinkCopier} 管理，在创建 Copi
 说明其如何为不同链路执行器提供一致的调度环境与线程上下文隔离；
 随后给出了基于 C++20 原子等待/通知实现的事件机制，用以支持低开销的异步完成语义。
 在链路执行器部分，本章详细展开了 RDMA 执行器的资源初始化、控制面缓冲区与 MR 注册、批处理发送与接收路径，
-并通过 \texttt{RdmaFlusher} 进一步保证 GPU Direct RDMA 场景下的数据可见性与一致完成语义；
+并通过 \texttt{RdmaFlusher} 进一步保证 GPUDirect RDMA 场景下的数据可见性与一致完成语义；
 同时，本章给出了 NVLink 执行器在节点内跨进程场景下的控制面队列组织、后台拷贝线程推进方式，
 以及通过 CUDA IPC 映射缓存复用降低 open/close 开销的关键优化。
 通过上述实现，\sysname 在保持统一接口的同时实现了面向 RDMA 与 NVLink 的高效、可扩展且 SM-free 的通信控制面与数据面协同。
