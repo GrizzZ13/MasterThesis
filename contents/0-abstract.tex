@@ -16,7 +16,7 @@
   在相同配置下 \sysname{} 对于计算任务性能无影响，基准系统计算性能损失最高约 17\%；
   在端到端测试中，\sysname{} 相比于基准系统在 首令牌生成时间 和 相邻令牌生成间隔 指标上最多分别取得 16\% 和 6.9\% 的提升；
   在解码过程中相邻令牌生成间隔分布更集中、更稳定。
-  说明 \sysname{} 可在保证高效传输的同时避免通信对计算的干扰，为高吞吐、低尾延迟推理提供通信基础。
+  说明 \sysname{} 可在保证高效传输的同时避免通信对计算的干扰，为高性能推理提供通信基础。
 \end{abstract}
 
 \begin{abstract}[en]
@@ -31,9 +31,9 @@
   To accommodate complex traffic patterns, the system implements an asynchronous runtime and a preemptive priority scheduler, and provides a unified send/receive interface to abstract away heterogeneity across multiple links.
 
   Experimental results show that \sysname{} achieves point-to-point communication bandwidth comparable to or better than the baseline system.
-  In addition, we conduct systematic evaluations under scenarios with overlapped computation and communication.
-  Under identical configurations, \sysname{} incurs no performance degradation to computation tasks, whereas the baseline system suffers up to approximately 17\% computation performance loss.
-  In end-to-end evaluations, compared with the baseline system, \sysname{} achieves improvements of up to 16\% and 6.9\% in time-to-first-token and time-between-tokens, respectively.
-  Moreover, during decoding, the distribution of time-between-tokens is more concentrated and stable.
-  These results demonstrate that \sysname{} can maintain efficient data transfer while avoiding interference between communication and computation, providing a solid communication foundation for high-throughput, low-tail-latency inference.
+  In addition, we conduct evaluations under scenarios with computation and communication overlapping.
+  Under identical configurations, \sysname{} incurs no performance degradation to computation tasks, whereas baseline suffers up to approximately 17\% computation performance loss.
+  In end-to-end evaluations, compared with baseline, \sysname{} achieves improvements of up to 16\% and 6.9\% in time-to-first-token and time-between-tokens, respectively.
+  Moreover, during decoding, the distribution of time-between-tokens is more stable.
+  These results demonstrate that \sysname{} can maintain efficient data transfer while avoiding interference between communication and computation, providing a solid foundation for high-performance model inference.
 \end{abstract}
