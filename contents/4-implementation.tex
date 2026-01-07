@@ -13,7 +13,7 @@
 对于应用而言，这两个接口提供一致的 \texttt{send()} / \texttt{recv()} 函数调用，
 与底层链路是 RDMA 还是 NVLink 无关。
 
-\begin{figure}[htbp]
+\begin{figure}[!htp]
     \centering
     \begin{minted}[
         frame=lines,
@@ -36,7 +36,7 @@ public:
   virtual ~Recver() = default;
 };
     \end{minted}
-    \caption{Sender 与 Recver 接口定义}
+    \bicaption{Sender 与 Recver 接口定义}{Sender and Recver interface definitions}
     \label{fig:sender-recver-interface}
 \end{figure}
 
@@ -59,7 +59,7 @@ NVLink 场景对应 \texttt{NvlinkSender} 与 \texttt{NvlinkRecver}。
 后台运行时负责驱动具体的链路执行器完成数据传输任务，
 前台应用只需在返回的时间对象上调用 \texttt{wait()} 就可以显式同步等待请求完成。
 
-\begin{figure}[htbp]
+\begin{figure}[!htp]
     \centering
     \begin{minted}[
         frame=lines,
@@ -77,7 +77,7 @@ send_event->wait();
 auto recv_event = recver->recv(id, recv_buffer, size);
 recv_event->wait();
     \end{minted}
-    \caption{应用侧发送与接收调用示例}
+    \bicaption{应用侧发送与接收调用示例}{Example of send/recv calls in the application}
     \label{fig:app-send-recv-example}
 \end{figure}
 
@@ -89,7 +89,7 @@ recv_event->wait();
 相比于底层 RDMA / NVLink 执行器中承担的数据面与控制面逻辑，运行时本身不参与传输细节的管理，
 而是专注于为执行器提供一致的轮询调用、线程上下文以及必要的资源隔离，从而保证各类执行器能够在统一框架下协同工作。
 
-\begin{figure}[htbp]
+\begin{figure}[!htp]
     \centering
     \begin{minted}[
         frame=lines,
@@ -108,7 +108,7 @@ auto runtime = RuntimeBuilder()
                     .unwrap();
 auto handle = runtime->start();
     \end{minted}
-    \caption{运行时初始化流程}
+    \bicaption{运行时初始化示例}{Example of runtime initialization}
     \label{fig:runtime-init}
 \end{figure}
 
@@ -122,7 +122,7 @@ auto handle = runtime->start();
 并且其 \texttt{poll()} 方法具有单线程推进语义，
 绑定固定线程策略保证每个执行器的 \texttt{poll()} 只会在单一线程中被调用，确保线程安全。
 
-\begin{figure}[htbp]
+\begin{figure}[!htp]
     \centering
     \begin{minted}[
         frame=lines,
@@ -137,7 +137,7 @@ public:
   virtual ~Pollable() = default;
 };
     \end{minted}
-    \caption{可驱动对象接口定义}
+    \bicaption{可驱动对象接口定义}{Definition of the pollable interface}
     \label{fig:pollable-interface}
 \end{figure}
 
@@ -170,46 +170,6 @@ public:
 该事件机制基于 C++20 原子变量及其等待/通知原语实现，避免了传统条件变量所需的内核态切换，
 从而在多线程环境中提供更高效且可扩展的同步能力。
 
-\begin{figure}[htbp]
-    \centering
-    \begin{minted}[
-        frame=lines,
-        linenos,
-        fontsize=\small,
-        numbersep=10pt,
-        framesep=3mm
-    ]{cpp}
-class Event {
-private:
-  std::atomic<bool> finished_ = false;
-
-public:
-  bool is_notified() const {
-    return this->finished_.load(std::memory_order_acquire);
-  }
-
-  void notify() {
-    this->finished_.store(true, std::memory_order_release);
-    if (!globalConfig.enable_busy_wait) {
-      this->finished_.notify_all();
-    }
-  }
-
-  void wait() {
-    if (globalConfig.enable_busy_wait) {
-      while (!this->finished_.load(std::memory_order_acquire)) {
-        _mm_pause();
-      }
-    } else {
-      this->finished_.wait(false, std::memory_order_acquire);
-    }
-  }
-};
-    \end{minted}
-    \caption{事件类核心结构和方法}
-    \label{fig:event-class}
-\end{figure}
-
 事件对象内部仅维护一个原子布尔值 \texttt{finished\_}，用于记录事件是否已完成。
 围绕这一标志位，\sysname 提供了两种等待策略，可针对不同应用场景灵活选用。
 
@@ -225,6 +185,43 @@ public:
 
 通过同时提供阻塞式等待与忙等待两种策略，\sysname 可以在 CPU 利用率与最短延迟之间取得灵活平衡，
 使系统在不同硬件和负载条件下均能保持高效运行。图 ~\ref{fig:event-class} 展示了事件类的核心结构。
+
+\begin{figure}[!htp]
+    \centering
+    \begin{minted}[
+        frame=lines,
+        linenos,
+        fontsize=\small,
+        numbersep=10pt,
+        framesep=3mm
+    ]{cpp}
+class Event {
+private:
+  std::atomic<bool> finished_ = false;
+public:
+  bool is_notified() const {
+    return this->finished_.load(std::memory_order_acquire);
+  }
+  void notify() {
+    this->finished_.store(true, std::memory_order_release);
+    if (!globalConfig.enable_busy_wait) {
+      this->finished_.notify_all();
+    }
+  }
+  void wait() {
+    if (globalConfig.enable_busy_wait) {
+      while (!this->finished_.load(std::memory_order_acquire)) {
+        _mm_pause();
+      }
+    } else {
+      this->finished_.wait(false, std::memory_order_acquire);
+    }
+  }
+};
+    \end{minted}
+    \bicaption{事件类核心结构和方法}{Definition and methods of the Event class}
+    \label{fig:event-class}
+\end{figure}
 
 \section{应用接口和链路执行器封装}
 
@@ -275,8 +272,9 @@ RDMA 链路执行器的实现分为两层：
 \texttt{CompletionQueue}以及 \texttt{RcQueuePair}。
 这些类均通过静态工厂方法进行构造，返回智能指针以管理生命周期，
 并在析构函数中负责释放底层资源，确保 RAII 语义。
+图~\ref{fig:rdma-init} 给出了 RDMA 基础资源封装中核心抽象 \texttt{RcQueuePair} 的接口示意。
 
-执行过程如下：
+创建 RDMA 资源的执行过程如下：
 
 \begin{enumerate}
     \item 获取设备上下文：\texttt{Context} 内部调用 \texttt{ibv\_get\_device\_list} 查找用户指定的 RDMA 设备，
@@ -287,7 +285,7 @@ RDMA 链路执行器的实现分为两层：
           并自动负责析构阶段的资源回收。
 \end{enumerate}
 
-\begin{figure}[htbp]
+\begin{figure}[!htp]
     \centering
     \begin{minted}[
         frame=lines,
@@ -314,7 +312,7 @@ public:
   int poll_recv_cq_once(/*...*/) noexcept;
 };
     \end{minted}
-    \caption{RDMA 资源初始化}
+    \bicaption{RDMA 资源定义}{Definition and methods of RDMA resource}
     \label{fig:rdma-init}
 \end{figure}
 
@@ -341,9 +339,9 @@ public:
 
 实际 RDMA 数据面 buffer 通常由应用层提供，执行器内部只注册控制面需要的 host memory。由于控制面消息类型固定（\texttt{RdmaTicket}），
 \texttt{RdmaSender} 与 \texttt{RdmaRecver} 均会分配固定大小的数组作为控制面消息的缓冲区，并将其注册为 MR，用于进行高性能控制面通信。
-以下代码展示了 MR 的创建过程：
+图~\ref{fig:memory-region-setup}展示了 MR 的创建过程示例。
 
-\begin{figure}[htbp]
+\begin{figure}[!htp]
     \centering
     \begin{minted}[
         frame=lines,
@@ -358,7 +356,7 @@ auto buf = shared_ptr<void>(std::aligned_alloc(64, size), std::free);
 auto mr = MemoryRegion::create(pd, std::move(buf), size).unwrap();
 // After that, buf can be used for RDMA operations
     \end{minted}
-    \caption{内存区域（MR）创建}
+    \bicaption{内存区域创建示例}{Example of Memory Region creation}
     \label{fig:memory-region-setup}
 \end{figure}
 
@@ -375,13 +373,14 @@ RDMA 链路执行器在初始化阶段基于本地环回（loopback）的 RCQP �
 而是将该请求交由 Flusher 处理；
 Flusher 对同一 GPU 内存区域发起一次小规模 RDMA Read，
 并仅在该 Read 完成后再调用 \texttt{Event::notify()}。
+图~\ref{fig:flusher-setup} 展示了 \texttt{RdmaFlusher} 的创建示例。
 
 利用 PCIe/RDMA 路径上的顺序保证，后继 Read 等价于一道控制面“栅栏”，
 PCIe 会保证所有先前写入的数据在此 READ 之后对 GPU 可见，从而为上层提供一致的完成语义；
 并可通过批量处理或仅对最后分片执行 Flush 等策略来减少额外的控制开销。
 利用这种读-写屏障方法可以有效提供一致的完成语义，而无需对现有网络协议和硬件做更改
 
-\begin{figure}[htbp]
+\begin{figure}[!htp]
     \centering
     \begin{minted}[
         frame=lines,
@@ -397,7 +396,7 @@ qp->bring_up(qp->get_handshake_data().unwrap()).unwrap();
 // Create RDMA Flusher
 auto flusher = RdmaFlusher::create(std::move(qp)).unwrap();
     \end{minted}
-    \caption{Flusher 创建流程}
+    \bicaption{Flusher 创建流程示例}{Example of flusher creation}
     \label{fig:flusher-setup}
 \end{figure}
 
@@ -531,10 +530,10 @@ auto flusher = RdmaFlusher::create(std::move(qp)).unwrap();
 \texttt{notify()} 告知上层应用发送完成。
 这样，应用层看到的发送完成语义始终对应于“整个请求的最后一个分片发送完成”，有效简化了上层使用难度。
 
-\begin{figure}[htbp]
+\begin{figure}[!htp]
     \centering
     \includegraphics[width=0.6\linewidth]{figures/wrid_encoding.png}
-    \caption{工作请求标识符编码示意图}
+    \bicaption{工作请求标识符编码示意图}{wrid encoding}
     \label{fig:wrid-encoding}
 \end{figure}
 
@@ -640,7 +639,7 @@ executor\_nvlink 模块由发送端 \texttt{NvlinkSender}、接收端 \texttt{Nv
 整体仍然遵循统一的 \texttt{send()} / \texttt{recv()} 接口与事件通知语义。
 图 ~\ref{fig:nvlink-executor} 展示了 NVLink 链路执行器的核心类结构与成员变量。
 
-\begin{figure}[htbp]
+\begin{figure}[!htp]
     \centering
     \begin{minted}[
         frame=lines,
@@ -654,8 +653,8 @@ class NvlinkSender : public Sender, public Pollable {
 private:
   ipc::SPSCQueue<NvlinkSendTicket> send_ticket_queue_;
   ipc::SPSCQueue<NvlinkAck> recv_ack_queue_;
-  HandleCache handle_cache_;
   MultiMap<shared_ptr<Event>> pending_send_event_map_;
+  utils::Cache<cudaIpcMemHandle_t> handle_cache_;
   shared_ptr<Event> inner_send(uint32_t unique_id, uint64_t offset,
                                uint64_t length,
                                cudaIpcMemHandle_t handle);
@@ -670,16 +669,12 @@ public:
 class NvlinkRecver : public Recver, public Pollable {
 // ...
 private:
-  ipc::SPSCQueue<NvlinkSendTicket> recv_ticket_queue_;
-  ipc::SPSCQueue<NvlinkAck> send_ack_queue_;
-  Queue<NvlinkRecvCommand> recv_request_command_queue_;
-  MultiMap<NvlinkSendTicket> pending_remote_send_map_;
-  MultiMap<NvlinkRecvCommand> pending_local_recv_map_;
+  /* Omit similar members as NvlinkSender but reversed roles */
   Queue<NvlinkCopyTask> copy_task_queue_;
   NvlinkCopier copier_;
 };
     \end{minted}
-    \caption{NVLink 链路执行器定义}
+    \bicaption{NVLink 链路执行器定义}{Definition of the NVLink executor}
     \label{fig:nvlink-executor}
 \end{figure}
 
@@ -709,7 +704,7 @@ NVLink 控制面依赖主机共享内存进行跨进程通信，在主机共享�
 涉及 \texttt{std::shared\_ptr<Event>} 的 \texttt{NvlinkCopyTask} 仅在进程局部队列中流转，
 不会经由共享内存 SPSC 队列跨进程传递，从而避免了跨进程管理 C++ 对象生命周期的复杂性。
 
-\begin{figure}[htbp]
+\begin{figure}[!htp]
     \centering
     \begin{minted}[
         frame=lines,
@@ -729,7 +724,7 @@ struct alignas(8) NvlinkAck {
   uint32_t unique_id;
 };
     \end{minted}
-    \caption{NVLink 链路执行器控制面元数据}
+    \bicaption{NVLink 链路执行器控制面元数据定义}{Definition of  NVLink executor control-plane metadata}
     \label{fig:nvlink-control-plane-structure}
 \end{figure}
 
@@ -802,10 +797,10 @@ GPU 指针的跨进程可见性由 \texttt{NvlinkCopier} 管理，在创建 Copi
 并且随着被映射内存区域增大呈上升趋势：当映射的 buffer 足够大时，单次打开/关闭甚至达到毫秒级，
 这会直接限制 \sysname 在 NVLink 数据面的端到端吞吐，造成显著的 GPU 地址空间管理压力。
 
-\begin{figure}[htbp]
+\begin{figure}[!htp]
     \centering
     \includegraphics[width=0.8\linewidth]{figures/cuda_ipc_open_close_overhead_vs_size.png}
-    \caption{CUDA IPC Memory Handle 的打开/关闭开销}
+    \bicaption{CUDA IPC Memory Handle 的打开/关闭开销}{Overhead of opening/closing CUDA IPC memory handles}
     \label{fig:cuda-ipc-overhead}
 \end{figure}
 
@@ -825,6 +820,6 @@ GPU 指针的跨进程可见性由 \texttt{NvlinkCopier} 管理，在创建 Copi
 随后给出了基于 C++20 原子等待/通知实现的事件机制，用以支持低开销的异步完成语义。
 在链路执行器部分，本章详细展开了 RDMA 执行器的资源初始化、控制面缓冲区与 MR 注册、批处理发送与接收路径，
 并通过 \texttt{RdmaFlusher} 进一步保证 GPUDirect RDMA 场景下的数据可见性与一致完成语义；
-同时，本章给出了 NVLink 执行器在节点内跨进程场景下的控制面队列组织、后台拷贝线程推进方式，
-以及通过 CUDA IPC Memory Handle 映射缓存复用降低 open/close 开销的关键优化。
+本章也给出了 NVLink 执行器在节点内多 GPU 场景下的控制面队列组织、后台拷贝线程推进方式，
+以及通过 IPC Handle 缓存复用降低 open/close 开销的关键优化。
 通过上述实现，\sysname 在保持统一接口的同时实现了面向 RDMA 与 NVLink 的高效、可扩展且 SM-free 的通信控制面与数据面协同。

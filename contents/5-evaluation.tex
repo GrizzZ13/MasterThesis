@@ -66,10 +66,10 @@ NVLink P2P 测试，主要测量不同消息大小下，\sysname 与 NCCL 的有
 这一操作涉及用户态和内核态的切换，建立 GPU 内存页表映射等开销，这一系列开销所消耗的时间可以到达毫秒级；
 尤其是映射的内存区域较大时需要映射的页数量众多，带来的开销进一步增大，从而显著影响传输性能。
 
-\begin{figure}[htbp]
+\begin{figure}[!htp]
     \centering
-    \includegraphics[width=0.82\linewidth]{figures/p2p_nvlink_bandwidth_vs_size.png}
-    \caption{NVLink P2P 带宽 vs 消息大小}
+    \includegraphics[width=0.9\linewidth]{figures/p2p_nvlink_bandwidth_vs_size.png}
+    \bicaption{NVLink P2P 带宽随消息大小变化曲线}{NVLink P2P bandwidth vs. message size}
     \label{fig:nvlink-bw-vs-size}
 \end{figure}
 
@@ -91,10 +91,10 @@ QP 数量则反映了通信端在 RDMA 层面的并行度：当 QP 较少时，�
 相比之下 NCCL 由于 CPU 代理线程和 GPU 线程协同问题，带来更大的控制面开销，在 QP 数量少时难以充分利用链路带宽。
 随着并发 QP 数量增加，二者带宽逐步上升，并在单网卡理论带宽上限（400Gbps）趋于稳定，这显示出两种实现均能够通过增加并发度来提升带宽利用率。
 
-\begin{figure}[htbp]
+\begin{figure}[!htp]
     \centering
-    \includegraphics[width=0.82\linewidth]{figures/p2p_rdma_bandwidth_vs_qp.png}
-    \caption{RDMA P2P 场景下不同 QP 数量的有效带宽}
+    \includegraphics[width=0.75\linewidth]{figures/p2p_rdma_bandwidth_vs_qp.png}
+    \bicaption{RDMA P2P 有效带宽随 QP 数量变化曲线}{Effective bandwidth vs. number of QPs in RDMA P2P}
     \label{fig:rdma-bw-vs-qp}
 \end{figure}
 
@@ -110,10 +110,10 @@ QP 数量则反映了通信端在 RDMA 层面的并行度：当 QP 较少时，�
 随消息大小升高，在 1GB 的大消息尺度下，两者差距收敛，并接近理论带宽上限，
 这表明在大消息传输时，链路物理带宽成为主要瓶颈，二者均能较好地利用链路资源。
 
-\begin{figure}[htbp]
+\begin{figure}[!htp]
     \centering
-    \includegraphics[width=0.82\linewidth]{figures/p2p_rdma_bandwidth_vs_size.png}
-    \caption{RDMA P2P 场景下不同消息大小的有效带宽}
+    \includegraphics[width=0.9\linewidth]{figures/p2p_rdma_bandwidth_vs_size.png}
+    \bicaption{RDMA P2P 有效带宽随消息大小变化曲线}{Effective bandwidth vs. message size in RDMA P2P}
     \label{fig:rdma-bw-vs-size}
 \end{figure}
 
@@ -145,10 +145,10 @@ QP 数量则反映了通信端在 RDMA 层面的并行度：当 QP 较少时，�
 相较于 NVIDIA H100 GPU 共计 132 个 SM 的硬件规模，
 该开销已占据了相当比例的计算资源，对并发执行的计算任务产生了不可忽视的影响。
 
-\begin{figure}[htbp]
+\begin{figure}[!htp]
     \centering
-    \includegraphics[width=0.82\linewidth]{figures/p2p_nvlink_compute_impact_vs_size.png}
-    \caption{NVLink P2P 场景消息大小对计算性能的影响}
+    \includegraphics[width=0.9\linewidth]{figures/p2p_nvlink_compute_impact_vs_size.png}
+    \bicaption{NVLink P2P 相对计算性能随消息大小变化曲线}{Impact of message size on compute performance in NVLink P2P}
     \label{fig:nvlink-compute-impact-vs-size}
 \end{figure}
 
@@ -182,10 +182,10 @@ QP 数量的变化不仅会影响链路带宽利用率，
 而且 NCCL 在进行初始化阶段通常限制了跨节点 P2P 通道数量为较低的数值，
 进一步约束了启动核函数占用的 SM 资源规模，因此其对计算任务的影响较小且变化不大。
 
-\begin{figure}[htbp]
+\begin{figure}[!htp]
     \centering
-    \includegraphics[width=0.82\linewidth]{figures/p2p_rdma_compute_impact_vs_qp.png}
-    \caption{RDMA P2P 场景 QP 数量对计算性能的影响}
+    \includegraphics[width=0.75\linewidth]{figures/p2p_rdma_compute_impact_vs_qp.png}
+    \bicaption{RDMA P2P 相对计算性能随 QP 数量变化曲线}{Impact of number of QPs on compute performance in RDMA P2P}
     \label{fig:rdma-compute-impact-vs-qp}
 \end{figure}
 
@@ -205,10 +205,10 @@ AllGather 是张量并行（Tensor Parallelism, TP）等并行策略中最为常
 其中 baseline 表示无任何通信并发时的计算性能，
 其余配置分别覆盖 NCCL 与 \sysname 在 RDMA 与 NVLink 链路上的 AllGather 性能。
 
-\begin{figure}[htbp]
+\begin{figure}[!htp]
     \centering
-    \includegraphics[width=0.82\linewidth]{figures/relative_perf_vs_msg_size_broken_y.png}
-    \caption{NCCL AllGather 对计算性能的影响}
+    \includegraphics[width=0.9\linewidth]{figures/relative_perf_vs_msg_size_broken_y.png}
+    \bicaption{NCCL AllGather 对计算性能的影响}{Impact of NCCL AllGather on compute performance}
     \label{fig:allgather-compute-impact}
 \end{figure}
 
@@ -249,14 +249,15 @@ AllGather 是张量并行（Tensor Parallelism, TP）等并行策略中最为常
 图 ~\ref{fig:burstgpt-trace} 展示了其请求负载的变化曲线。
 在这个系统上，部署 Qwen3-32B \cite{Qwen3-32B_model} 模型，关注端到端的性能表现。
 
-\subsection{端到端性能评测与分析}
-
-\begin{figure}[htbp]
+\begin{figure}[!htp]
     \centering
     \includegraphics[width=0.98\linewidth]{figures/requests_per_second.png}
-    \caption{BurstGPT 请求负载变化曲线}
+    \bicaption{BurstGPT 请求负载变化曲线}{BurstGPT request load trace}
     \label{fig:burstgpt-trace}
 \end{figure}
+
+
+\subsection{端到端性能评测与分析}
 
 图 ~\ref{fig:ttft-tbt-cdf} 展示了端到端测试场景下，
 \sysname 与 NCCL 在 首令牌延迟 （Time to First Token，TTFT） 和
@@ -277,21 +278,14 @@ TBT 波动一方面来源于扩容过程中 Decode 节点计算与通信并发�
 这两种通信任务存在带宽竞争，由于 NCCL 缺少细粒度的网络流量优先级传输机制，会导致部分 KV Cache 传输延迟增大，
 而 \sysname 通过分片传输与优先级流量调度，有效缓解了该问题，从而进一步降低了 TBT 的尾时延。
 
-\begin{figure}[htbp]
+\begin{figure}[!htp]
     \centering
     \includegraphics[width=0.98\linewidth]{figures/ttft_tbt_cdf_pickle_vs_nccl.png}
-    \caption{端到端推理累积分布函数对比}
+    \bicaption{端到端推理累积分布函数对比}{CDF comparison of end-to-end inference}
     \label{fig:ttft-tbt-cdf}
 \end{figure}
 
 \subsection{解码性能拆解分析}
-
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=0.9\linewidth]{figures/time_between_tokens.png}
-    \caption{端到端推理中不同通信实现下的 Time Between Tokens}
-    \label{fig:time-between-tokens}
-\end{figure}
 
 为了对比不同通信实现下，端到端推理过程中触发扩容的阶段 Time Between Tokens 性能，
 选取了扩容过程中相对稳态阶段的 TBT 性能进行拆解分析，具体如图~\ref{fig:time-between-tokens}所示。
@@ -310,6 +304,13 @@ TBT 波动一方面来源于扩容过程中 Decode 节点计算与通信并发�
 相比之下，\sysname 在端到端测试中表现出更稳定的 TBT 分布。
 由于其通信路径在设计上避免占用 GPU SM，并通过控制面卸载与异步数据搬运机制降低通信对前台计算的干扰，
 即使在通信并发存在的情况下，Decode 阶段的计算性能仍能够保持相对稳定。
+
+\begin{figure}[!htp]
+    \centering
+    \includegraphics[width=0.9\linewidth]{figures/time_between_tokens.png}
+    \bicaption{扩容过程中的令牌生成间隔拆解}{Time Between Tokens during scaling process}
+    \label{fig:time-between-tokens}
+\end{figure}
 
 \section{本章小结}
 本章围绕 \sysname 在分布式大模型推理中\textbf{提升通信带宽并降低通信对计算的干扰}的核心目标进行了评测。

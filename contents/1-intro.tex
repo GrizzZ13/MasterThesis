@@ -67,10 +67,10 @@ NCCL 针对 NVIDIA GPU 架构进行了深度优化，充分利用 GPU 之间的�
 作为主流深度学习框架（如 PyTorch 和 TensorFlow）的底层通信模块，NCCL 已成为 GPU 集群环境中高性能集合通信的事实标准，
 在大规模模型训练、推理场景中发挥着关键作用。
 
-\begin{figure}[htbp]
+\begin{figure}[!htp]
     \centering
     \includegraphics[width=0.8\linewidth]{figures/nccl_rdma.png}
-    \caption{NCCL 跨节点 RDMA 通信示意图}
+    \bicaption{NCCL 跨节点 RDMA 通信示意图}{Illustration of inter-node NCCL RDMA communication}
     \label{fig:nccl-rdma-proxy-thread}
 \end{figure}
 
@@ -91,10 +91,10 @@ NCCL 在进行节点内的多 GPU 通信时，存在大量的计算资源浪费�
 GPU SM 属于计算资源，数量有限，在和计算任务并行时，会产生资源竞争、从而影响计算效率，
 GPU 的拷贝引擎\cite{agrawal2025optimizingmlconcurrentcomputation}（Copy Engine，CE）则专门用于数据传输任务，NCCL 缺乏对于 CE 的充分利用。
 
-\begin{figure}[htbp]
+\begin{figure}[!htp]
     \centering
     \includegraphics[width=0.8\linewidth]{figures/nccl_nvlink.png}
-    \caption{NCCL 节点内 NVLink 通信示意图}
+    \bicaption{NCCL 节点内 NVLink 通信示意图}{Illustration of intra-node NCCL NVLink communication}
     \label{fig:nccl-nvlink}
 \end{figure}
 
@@ -119,10 +119,10 @@ RNIC 在收到 doorbell 后，利用 GPUDirect RDMA 直接从 GPU 内存中读�
 不过 NVSHMEM 的设备端单边操作通常由 GPU SM 发起与推进，
 在通信时可能与计算任务共享 SM 资源，从而对计算任务产生一定干扰，
 
-\begin{figure}[htbp]
+\begin{figure}[!htp]
     \centering
     \includegraphics[width=0.6\linewidth]{figures/nvshmem_ibgda_3.png}
-    \caption{IBGDA GPU 通信流程图}
+    \bicaption{IBGDA GPU 通信示意图}{Illustration of IBGDA communication}
     \label{fig:nvshmem-ibgda}
 \end{figure}
 

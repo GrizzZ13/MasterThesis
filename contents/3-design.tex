@@ -34,10 +34,10 @@
 详细内容将在后续~\ref{sec:app-interface-layer}和~\ref{sec:link-executor-layer}节中展开介绍。
 分层设计的核心目标在于实现接口与硬件的彻底解耦，使系统能够适配不同的互联技术，并在负载规模扩大时仍保持通信性能的稳定。
 
-\begin{figure}[htbp]
+\begin{figure}[!htp]
       \centering
       \includegraphics[width=1.0\linewidth]{figures/system_arch_v2.png}
-      \caption{\sysname 系统整体架构}
+      \bicaption{\sysname 系统整体架构}{Overall architecture of \sysname}
       \label{fig:sys-arch}
 \end{figure}
 
@@ -228,10 +228,10 @@
 引入任务分片后，每条消息被切割为多个小分片 $c_1, c_2, \dots$，
 而最大在途量 $N$ 则进一步限制了调度器在一次轮询中最多只能提交有限个分片，二者结合产生如下效果：
 
-\begin{figure}[htbp]
+\begin{figure}[!htp]
       \centering
       \includegraphics[width=0.9\linewidth]{figures/priority_sched.png}
-      \caption{基于分片与最大在途量的优先级调度示意图}
+      \bicaption{基于分片与最大在途量的优先级调度示意图}{Illustration of priority scheduling with chunking and an outstanding limit}
       \label{fig:priority_sched}
 \end{figure}
 
@@ -304,10 +304,10 @@ RDMA 链路执行器负责在跨节点 GPU 之间建立一条完全由网卡驱�
       \mathrm{GPU}_{\mathrm{dst}}.
 \]
 
-\begin{figure}[htbp]
+\begin{figure}[!htp]
       \centering
       \includegraphics[width=0.95\linewidth]{figures/pickle_rdma.png}
-      \caption{RDMA 链路执行器示意图}
+      \bicaption{RDMA 链路执行器示意图}{Illustration of the RDMA executor}
       \label{fig:pickle-rdma-arch}
 \end{figure}
 
@@ -488,10 +488,10 @@ RDMA Write 操作的局限是完成事件只在发送方本地可见。
       \mathrm{GPU}_{\mathrm{dst}},
 \]
 
-\begin{figure}[htbp]
+\begin{figure}[!htp]
       \centering
       \includegraphics[width=0.85\linewidth]{figures/pickle_nvlink.png}
-      \caption{NVLink 链路执行器示意图}
+      \bicaption{NVLink 链路执行器示意图}{Illustration of the NVLink executor}
       \label{fig:pickle-nvlink-arch}
 \end{figure}
 
