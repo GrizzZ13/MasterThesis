@@ -78,7 +78,7 @@ def main() -> None:
     ax.plot(pickle_timestamps_ms, pickle_duration_ms, label="Pickle NVLink")
     ax.plot(nccl_timestamps_ms, nccl_duration_ms, label="NCCL NVLink")
     ax.set_xlabel("时间（ms）", fontsize=font_size, fontproperties=font)
-    ax.set_ylabel("Token 间隔延迟（ms）", fontsize=font_size, fontproperties=font)
+    ax.set_ylabel("令牌间隔时间 TBT（ms）", fontsize=font_size, fontproperties=font)
     ax.tick_params(axis="both", which="both", labelsize=font_size)
     ax.set_ylim(bottom=0, top=35)
     output_path = (

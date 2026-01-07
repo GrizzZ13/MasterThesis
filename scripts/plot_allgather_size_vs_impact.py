@@ -29,6 +29,7 @@ import matplotlib.pyplot as plt
 from matplotlib.font_manager import FontProperties
 from matplotlib.ticker import MultipleLocator
 from pathlib import Path
+import random
 
 # ======================
 # Font config
@@ -173,6 +174,10 @@ rdma_perf = [d["relative_attn_perf"] for d in nccl_rdma_perf]
 sizes = nvlink_sizes
 size_labels = [bytes_to_label(s) for s in sizes]
 
+# Placeholder pickle data (to be replaced later)
+pickle_nvlink_perf = [random.uniform(0.99, 1.002) for _ in nvlink_sizes]
+pickle_rdma_perf = [random.uniform(0.99, 1.002) for _ in rdma_sizes]
+
 # ======================
 # Plot
 # ======================
@@ -181,7 +186,25 @@ fig, (ax_top, ax_bot) = plt.subplots(
     1,
     sharex=True,
     figsize=(7, 4),
-    gridspec_kw={"height_ratios": [3, 1], "hspace": 0.15},
+    gridspec_kw={"height_ratios": [3, 1.2], "hspace": 0.15},
+)
+
+# ---- No communication ----
+ax_top.axhline(
+    1.0, color="gray", linestyle="--", linewidth=1, label="No communication"
+)
+
+# ---- Pickle NVLink ----
+ax_top.plot(
+    nvlink_sizes,
+    pickle_nvlink_perf,
+    marker="^",
+    label="Pickle NVLink",
+)
+ax_bot.plot(
+    nvlink_sizes,
+    pickle_nvlink_perf,
+    marker="^",
 )
 
 # ---- NVLink ----
@@ -195,6 +218,19 @@ ax_bot.plot(
     nvlink_sizes,
     nvlink_perf,
     marker="o",
+)
+
+# ---- Pickle RDMA ----
+ax_top.plot(
+    rdma_sizes,
+    pickle_rdma_perf,
+    marker="D",
+    label="Pickle RDMA",
+)
+ax_bot.plot(
+    rdma_sizes,
+    pickle_rdma_perf,
+    marker="D",
 )
 
 # ---- RDMA ----
@@ -248,7 +284,16 @@ ax_bot.set_xticklabels(
 ax_bot.set_xlabel("消息大小", fontsize=font_size, fontproperties=font)
 ax_top.set_ylabel("相对计算性能", fontsize=font_size, fontproperties=font)
 
-ax_top.legend(loc="upper right", prop=font)
+handles, labels = ax_top.get_legend_handles_labels()
+fig.legend(
+    handles,
+    labels,
+    loc="upper center",
+    bbox_to_anchor=(0.5, 0.99),
+    ncol=3,
+    frameon=False,
+    prop=font,
+)
 
 # ======================
 # Save
@@ -258,6 +303,6 @@ output_path = (
     / "figures"
     / "relative_perf_vs_msg_size_broken_y.png"
 )
-fig.subplots_adjust(bottom=0.22)
+fig.subplots_adjust(bottom=0.22, top=0.82)
 fig.savefig(output_path, dpi=300)
 print(f"Saved plot to {output_path}")

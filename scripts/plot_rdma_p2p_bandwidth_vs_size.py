@@ -69,8 +69,8 @@ def main() -> None:
     ]
 
     fig, ax = plt.subplots(figsize=(8, 4))
-    ax.plot(sizes, pickle_bw, marker="o", label="Pickle")
-    ax.plot(sizes, nccl_bw, marker="s", label="NCCL")
+    ax.plot(sizes, [x / 8 for x in pickle_bw], marker="o", label="Pickle")
+    ax.plot(sizes, [x / 8 for x in nccl_bw], marker="s", label="NCCL")
 
     ax.set_xscale("log", base=2)
     ax.set_xticks(sizes)
@@ -78,9 +78,9 @@ def main() -> None:
         size_labels, rotation=30, ha="right", fontsize=font_size, fontproperties=font
     )
     ax.set_xlabel("消息大小", fontsize=font_size, fontproperties=font)
-    ax.set_ylabel("有效带宽 (Gbps)", fontsize=font_size, fontproperties=font)
+    ax.set_ylabel("有效带宽 (GB/s)", fontsize=font_size, fontproperties=font)
     ax.tick_params(axis="both", which="both", labelsize=font_size)
-    ax.set_ylim(0, 420)
+    ax.set_ylim(0, 420 / 8)
     ax.grid(True, which="both", linestyle="--", alpha=0.5)
     ax.legend(prop=font)
     fig.tight_layout()

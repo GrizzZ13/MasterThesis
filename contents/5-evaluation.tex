@@ -60,9 +60,9 @@ NVLink P2P 测试，主要测量不同消息大小下，\sysname 与 NCCL 的有
 这主要是因为 \sysname 的控制面开销仅涉及 CPU 侧通过共享内存传输控制面信息，然后通过 Copy Engine 触发 NVLink 数据传输，数据面路径更贴近硬件；
 相比之下 NCCL 采用了分片流水、GPU kernel同步、协议握手等机制，引入了一定的固定开销，使其无法完全利用所有的 NVLink 带宽资源；
 
-值得注意的是，没有采取 cudaIpcMemHandle 缓存优化的 \sysname 版本，在各个消息规模下的性能，
+值得注意的是，没有采取 IPC Handle 缓存优化的 \sysname 版本，在各个消息规模下的性能，
 都显著低于 NCCL 和带有缓存优化的 \sysname 版本。
-这主要是因为没有缓存优化的 \sysname 版本，在每次通信时都需要进行 cudaIpcOpenMemHandle 操作，
+这主要是因为没有缓存优化的 \sysname 版本，在每次通信时都需要进行 \texttt{cudaIpcOpenMemHandle} 操作，
 这一操作涉及用户态和内核态的切换，建立 GPU 内存页表映射等开销，这一系列开销所消耗的时间可以到达毫秒级；
 尤其是映射的内存区域较大时需要映射的页数量众多，带来的开销进一步增大，从而显著影响传输性能。
 
@@ -155,11 +155,11 @@ QP 数量则反映了通信端在 RDMA 层面的并行度：当 QP 较少时，�
 \subsection{跨节点通信}
 
 需要指出的是，在跨节点 RDMA 场景下，本节并未像节点内 NVLink 测试那样以消息大小作为主要自变量，
-而是选择 QP（Queue Pair）数量 作为横轴，这一设计与 NCCL 在 RDMA send/recv 路径上的实现方式密切相关。
+而是选择 QP（Queue Pair）数量 作为横轴，这一设计与 NCCL 在 RDMA Send/Recv 路径上的实现方式密切相关。
 
 具体而言，在 NCCL 的 RDMA P2P 实现中，通信并不直接由 GPU kernel 负责完成数据拷贝，
 而是主要依赖 CPU 侧代理线程（proxy thread）驱动 RDMA verbs，GPU 侧仅通过少量同步参与通信过程。
-在该模式下，NCCL 在发起 RDMA send/recv 时所启动的 GPU kernel，
+在该模式下，NCCL 在发起 RDMA Send/Recv 时所启动的 GPU kernel，
 其 grid size 受到 NCCL 初始化时 P2P 通道数量的限制，导致其对 GPU 计算资源的占用与消息大小关联性较弱，
 即使消息大小发生变化，GPU 上实际占用的 SM 资源变化也十分有限，
 消息大小并不能有效刻画 RDMA 通信对计算任务的干扰程度。

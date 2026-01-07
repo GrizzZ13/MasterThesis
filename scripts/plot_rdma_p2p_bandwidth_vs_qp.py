@@ -16,14 +16,14 @@ def main() -> None:
     nccl_bw = [241.83, 323.54, 336.00, 371.20]
 
     fig, ax = plt.subplots(figsize=(6, 4))
-    ax.plot(qps, pickle_bw, marker="o", label="Pickle")
-    ax.plot(qps, nccl_bw, marker="s", label="NCCL")
+    ax.plot(qps, [x / 8 for x in pickle_bw], marker="o", label="Pickle")
+    ax.plot(qps, [x / 8 for x in nccl_bw], marker="s", label="NCCL")
 
     ax.set_xlabel("QP 数量", fontsize=font_size, fontproperties=font)
-    ax.set_ylabel("有效带宽 (Gbps)", fontsize=font_size, fontproperties=font)
+    ax.set_ylabel("有效带宽 (GB/s)", fontsize=font_size, fontproperties=font)
     ax.tick_params(axis="both", which="both", labelsize=font_size)
     ax.set_xticks(qps)
-    ax.set_ylim(0, 420)
+    ax.set_ylim(0, 420 / 8)
     ax.grid(True, linestyle="--", alpha=0.5)
     ax.legend(prop=font)
     fig.tight_layout()

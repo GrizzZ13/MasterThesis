@@ -74,8 +74,12 @@ def main() -> None:
 
     fig, ax = plt.subplots(figsize=(8, 4))
 
-    ax.plot(sizes, open_us, marker="o", label="cudaIpcOpenMemHandle")
-    ax.plot(sizes, close_us, marker="s", label="cudaIpcCloseMemHandle")
+    ax.plot(
+        sizes, [x / 1000 for x in open_us], marker="o", label="cudaIpcOpenMemHandle"
+    )
+    ax.plot(
+        sizes, [x / 1000 for x in close_us], marker="s", label="cudaIpcCloseMemHandle"
+    )
 
     ax.set_xscale("log", base=2)
     ax.set_xticks(sizes)
@@ -84,10 +88,10 @@ def main() -> None:
     )
 
     ax.set_xlabel("缓冲区大小", fontsize=font_size, fontproperties=font)
-    ax.set_ylabel("延迟 (微秒)", fontsize=font_size, fontproperties=font)
+    ax.set_ylabel("延迟 (ms)", fontsize=font_size, fontproperties=font)
     ax.tick_params(axis="both", which="both", labelsize=font_size)
     ax.set_ylim(bottom=0)
-    ax.yaxis.set_major_locator(MultipleLocator(2000))
+    ax.yaxis.set_major_locator(MultipleLocator(2))
 
     ax.grid(True, which="both", linestyle="--", alpha=0.5)
     ax.legend(prop=font)

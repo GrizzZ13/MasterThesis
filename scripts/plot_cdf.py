@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from matplotlib.font_manager import FontProperties
 from matplotlib.gridspec import GridSpec
 
-font_size = 14
+font_size = 18
 repo_root = Path(__file__).resolve().parent.parent
 
 TTFT_PICKLE_CSV = repo_root / "data" / "ttft_cdf_pickle.csv"
@@ -110,7 +110,7 @@ def main() -> None:
     )
     ax_ttft.set_title("TTFT CDF", fontsize=font_size, fontproperties=font)
     ax_ttft.set_xlabel(
-        "首 Token 延迟 TTFT (ms)", fontsize=font_size, fontproperties=font
+        "首令牌延迟 TTFT (ms)", fontsize=font_size, fontproperties=font
     )
     ax_ttft.set_ylabel("CDF", fontsize=font_size, fontproperties=font)
     ax_ttft.tick_params(axis="both", which="both", labelsize=font_size)
@@ -132,7 +132,7 @@ def main() -> None:
     )
     ax_tbt.set_title("TBT CDF", fontsize=font_size, fontproperties=font)
     ax_tbt.set_xlabel(
-        "Token 间隔延迟 TBT (ms)", fontsize=font_size, fontproperties=font
+        "令牌间隔时间 TBT (ms)", fontsize=font_size, fontproperties=font
     )
     ax_tbt.tick_params(axis="both", which="both", labelsize=font_size)
     ax_tbt.grid(True, linestyle="--", alpha=0.5)

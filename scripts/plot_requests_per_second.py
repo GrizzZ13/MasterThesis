@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-font_size = 14
+font_size = 16
 repo_root = Path(__file__).resolve().parent.parent
 
 # ======= Input / output paths (edit here) =======
@@ -68,13 +68,13 @@ def main() -> None:
 
     max_s = max(counts_by_second)
     xs = list(range(max_s + 1))
-    ys = [counts_by_second.get(s, 0) for s in xs]
+    ys = [counts_by_second.get(s, 0) / 2 for s in xs]
 
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.bar(xs, ys, width=1.0, align="edge", color="#4C78A8", edgecolor="none")
 
     ax.set_xlabel("时间 (分钟)", fontsize=font_size, fontproperties=font)
-    ax.set_ylabel("每秒请求数（请求/秒）", fontsize=font_size, fontproperties=font)
+    ax.set_ylabel("请求速率（请求/秒）", fontsize=font_size, fontproperties=font)
     ax.tick_params(axis="both", which="both", labelsize=font_size)
     ax.set_xlim(0, 300)
     ax.set_ylim(bottom=0)
