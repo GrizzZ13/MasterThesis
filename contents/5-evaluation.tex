@@ -25,7 +25,7 @@ GPU 侧搭载 8 张 NVIDIA H100 GPU，总显存容量为 640\,GB。
 
 \section{点对点通信测试}
 
-点对点通信是 \sysname 系统提供的基础能力之一，也是系统构建高性能数据传输通路的核心组件。
+点对点（P2P）通信是 \sysname 系统提供的基础能力之一，也是系统构建高性能数据传输通路的核心组件。
 在分布式推理场景中，计算与通信往往交替出现：通信性能不足会放大流水线气泡，并进一步限制整体吞吐与端到端时延。
 因此，\sysname 在设计上围绕 \textbf{低开销发起、稳定的持续带宽、以及对不同消息尺度的适配能力} 来优化 P2P 传输路径，
 从而为多机多卡推理提供可复用、可组合的高性能通信原语。
@@ -237,15 +237,14 @@ AllGather 是张量并行（Tensor Parallelism, TP）等并行策略中最为常
 扩容过程中，新实例通常需要快速加载模型参数，同时还需与已有实例协同完成推理计算，
 从而使得模型参数传输、KV Cache 交换等通信操作与前台推理计算在时间上高度重叠。
 
-在此类场景下，通信对计算资源的占用情况将直接影响推理性能，尤其是在 Decode 阶段，
-通信与计算并发执行所带来的资源竞争会反映在 token 生成节奏的波动上。
-因此，该测试场景能够有效放大通信机制差异，并检验系统在真实负载下的稳定性与鲁棒性。
+在此类场景下，通信对计算资源的占用情况将直接影响推理性能，通信与计算并发执行所带来的资源竞争会反映在 token 生成速率上。
+因此，该测试场景能够有效放大通信机制差异，并检验系统在真实负载下的性能表现。
 
 本实验基于 FlashInfer \cite{flashinfer_repo} 算子库，
 使用 C++ 实现高性能的 PD 分离推理框架\cite{distserve_paper}，
 其整体推理性能与当前学术界和工业界广泛采用的 SOTA 推理系统（如 vLLM）\cite{kwon2023pagedattention} 进行对齐，
 并且分别使用 \sysname 和 NCCL 实现其点对点通信模块，用于 KV Cache 传输和通过网络传输进行的模型扩容。
-在集群管理部分，参考现有工作\cite{blitzscale_paper,llumnix} 实现请求调度策略和模型自动扩缩容的逻辑。
+在集群管理部分，参考现有工作\cite{blitzscale_paper,llumnix} 实现请求调度和自动扩缩容的策略。
 选取 BurstGPT 作为请求负载\cite{burstgpt}，模拟 MaaS 请求动态变化的场景，
 图 ~\ref{fig:burstgpt-trace} 展示了其请求负载的变化曲线。
 在这个系统上，部署 Qwen3-32B \cite{Qwen3-32B_model} 模型，关注端到端的性能表现。
@@ -254,33 +253,33 @@ AllGather 是张量并行（Tensor Parallelism, TP）等并行策略中最为常
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.9\linewidth]{figures/requests_per_second.png}
+    \includegraphics[width=0.98\linewidth]{figures/requests_per_second.png}
     \caption{BurstGPT 请求负载变化曲线}
     \label{fig:burstgpt-trace}
 \end{figure}
 
 图 ~\ref{fig:ttft-tbt-cdf} 展示了端到端测试场景下，
-\sysname 与 NCCL 在 Time to First Token (TTFT) 和
-Time Between Tokens (TBT) 两项指标上的累积分布函数（CDF）对比。
+\sysname 与 NCCL 在 首令牌延迟 （Time to First Token，TTFT） 和
+令牌间隔时间（Time Between Tokens，TBT） 两项指标上的累积分布函数（CDF）对比。
 \sysname 和 NCCL 的 TTFT 和 TBT 中位数表现接近，
 但 NCCL 在尾部表现出更大的波动，
 
 在 TTFT 指标上，\sysname 相比于 NCCL 的 P50 和 P99 时延分别提升了 3.8\% 和 16\%。
-对于 TTFT，由于系统需要进行 KV Cache 传输，Prefill 节点的计算与通信并行，
-导致 NCCL 在部分请求上出现更长的 TTFT 时延。
-在请求激增导致请求队列堆积、触发模型实例扩容时，Prefill 节点不作为模型参数源节点，因此不存在计算通信并行的情况；
-但是由于 \sysname 相比于 NCCL 有更好的带宽表现，可以在更短的时间内完成模型参数分发，
-请求排队的时间得以缩短，从而降低扩容过程对 TTFT 的影响。
+对于 TTFT，由于系统需要进行 KV Cache 传输和模型参数传输，Prefill 节点的计算与通信并行，
+导致 NCCL 在部分请求上出现更长的 TTFT 时延；
+并且在请求激增导致请求队列堆积、触发模型实例扩容时，由于 \sysname 相比于 NCCL 有更好的带宽表现，
+可以在更短的时间内完成模型参数分发，请求排队的时间得以缩短，从而降低扩容过程对 TTFT 的影响。
 
 在 TBT 指标上，\sysname 和 NCCL 的 P50 表现接近，
 但 NCCL 在尾时延上出现了更大的波动，\sysname 的 P95 与 P99 时延相较于 NCCL 分别降低了 5.5\% 和 6.9\%。
-TBT 波动主要来源于扩容过程中 Decode 节点计算与通信并发执行，导致 Decode 的性能收到影响。
-并且由于 \sysname 能够更快地完成 KV Cache 传输，
-因此第一个 Decode token 时延受到的影响较小，从而进一步降低了 TBT 的尾时延。
+TBT 波动一方面来源于扩容过程中 Decode 节点计算与通信并发执行，导致 Decode 的性能受到影响；
+另一方面在于选取 Prefill 节点作为模型参数传输源节点时，Prefill 节点存在模型参数传输与 KV Cache 传输的双重通信任务，
+这两种通信任务存在带宽竞争，由于 NCCL 缺少细粒度的网络流量优先级传输机制，会导致部分 KV Cache 传输延迟增大，
+而 \sysname 通过分片传输与优先级流量调度，有效缓解了该问题，从而进一步降低了 TBT 的尾时延。
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.95\linewidth]{figures/ttft_tbt_cdf_pickle_vs_nccl.png}
+    \includegraphics[width=0.98\linewidth]{figures/ttft_tbt_cdf_pickle_vs_nccl.png}
     \caption{端到端推理累积分布函数对比}
     \label{fig:ttft-tbt-cdf}
 \end{figure}
@@ -294,8 +293,8 @@ TBT 波动主要来源于扩容过程中 Decode 节点计算与通信并发执�
     \label{fig:time-between-tokens}
 \end{figure}
 
-图~\ref{fig:time-between-tokens} 展示了在不同通信实现下，
-端到端推理过程中触发扩容的阶段 Time Between Tokens 性能。
+为了对比不同通信实现下，端到端推理过程中触发扩容的阶段 Time Between Tokens 性能，
+选取了扩容过程中相对稳态阶段的 TBT 性能进行拆解分析，具体如图~\ref{fig:time-between-tokens}所示。
 在推理过程中，由于用户请求激增触发模型实例的在线扩容，
 通过 NVLink 将模型参数从 Decode 节点分发至新实例。
 
@@ -322,5 +321,5 @@ TBT 波动主要来源于扩容过程中 Decode 节点计算与通信并发执�
 \sysname 仍能够有效实现计算通信解耦，降低集合通信引入的计算性能损失。
 最后，在面向 MaaS 的端到端 PD 分离推理与在线扩容场景中，
 本章从 TTFT 与 TBT 两项可观测指标出发验证了 \sysname 的实际收益：
-在中位数接近的情况下，\sysname 能够显著改善尾部时延并降低 token 生成速率的波动。
+在中位数接近的情况下，\sysname 能够显著改善尾时延并降低 token 生成速率的波动。
 综上，\sysname 在微基准、干扰分析与端到端评测中均体现出性能优势，验证了其在分布式推理系统中的有效性与实用价值。

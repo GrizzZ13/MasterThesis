@@ -13,7 +13,7 @@
 在系统设计上，\sysname 通过统一的 \texttt{send()} / \texttt{recv()} 双向接口抽象屏蔽底层链路差异，
 在跨节点场景使用 GPUDirect RDMA 构建高效的数据面通路，在节点内场景则基于 CUDA IPC 与 Copy Engine 实现 SM-free 的高带宽搬运。
 在实现层面，本文给出了事件机制、运行时轮询框架以及 RDMA/NVLink 两类链路执行器的关键工程细节与性能优化，
-包括控制面批处理、GPUDirect RDMA 可见性保证以及 CUDA IPC 映射缓存复用等。
+包括控制面批处理、GPUDirect RDMA 可见性保证以及 CUDA IPC Memory Handle 映射缓存复用等。
 
 实验结果表明，相比 NCCL 等基线方案，\sysname 在点对点与集合通信场景下能够提供具有竞争力的带宽表现，
 并显著降低通信对前台计算的干扰；在端到端推理负载中，\sysname 能够保持更稳定的解码节奏，

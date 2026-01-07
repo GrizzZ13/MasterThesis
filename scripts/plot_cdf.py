@@ -72,8 +72,8 @@ def _plot_cdf(ax, points: list[CdfPoint], *, label: str, color: str) -> None:
 
 def main() -> None:
     font = FontProperties(fname=str(repo_root / "SimHei.ttf"), size=font_size)
-    ttft_factor = 0.7
-    tbt_factor = 0.3
+    ttft_factor = 0.5
+    tbt_factor = 0.25
     ttft_pickle_points = _load_cdf_points(
         TTFT_PICKLE_CSV, "pickle", x_col="ttft_ms", factor=ttft_factor
     )

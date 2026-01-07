@@ -43,8 +43,8 @@ public:
 在不同的传输链路下， \texttt{Sender} 与 \texttt{Recver} 分别对应不同类型的执行器实现：
 RDMA 场景对应 \texttt{RdmaSender} 与 \texttt{RdmaRecver}，
 NVLink 场景对应 \texttt{NvlinkSender} 与 \texttt{NvlinkRecver}。
-但执行器的内部逻辑（例如请求匹配、CUDA IPC Handle 以及地址偏移量交换、控制面队列的使用方式等）均对应用隐藏，
-应用只需提供唯一标识符（\texttt{unique\_id}）、缓冲区地址以及长度，即可提交一次完整的发送或接收请求。
+但执行器的内部逻辑（例如请求匹配、IPC Handle 以及地址偏移量交换、控制面队列的使用方式等）均对应用隐藏，
+应用只需提供逻辑通道标识符（\texttt{unique\_id}）、缓冲区地址以及长度，即可提交一次完整的发送或接收请求。
 
 所有发送与接收操作均返回一个 \texttt{Event} 事件对象指针用于异步完成通知。
 应用在提交请求后立即获得对应事件，可选择同步阻塞等待或是异步检查完成 Event 对象状态的方式，来确认请求是否完成。
@@ -103,6 +103,7 @@ auto runtime = RuntimeBuilder()
                     .with_pollables(std::move(pollables))
                     .with_num_threads(4)
                     .with_affinity(cpu_set)
+                    .with_poll_interval(0)
                     .build()
                     .unwrap();
 auto handle = runtime->start();
@@ -142,7 +143,7 @@ public:
 
 
 在启动阶段，运行时根据构造器提供的 CPU 集合参数为每个后台线程设置线程亲和性。
-对于跨涉及网卡和跨 NUMA 内存的执行器，这一策略可以避免执行器在轮询时发生跨 NUMA 节点的内存访问，
+对于涉及跨网卡和跨 NUMA 内存的执行器，这一策略可以避免执行器在轮询时发生跨 NUMA 节点的内存访问，
 而在 NVLink 场景下则有助于保持后台拷贝线程与前台应用线程之间的调度稳定性。
 线程启动后进入标准化的轮询循环，根据线程本地列表依次调用绑定的执行器的 \texttt{poll()}，
 并根据用户配置决定是否在每轮轮询后进行短暂休眠。
@@ -217,7 +218,7 @@ public:
 该方式不消耗 CPU 时间片，适用于事件完成时间难以预估、线程不希望持续占用处理器资源的场景。
 事件完成后，生产者线程将标志位置为 \texttt{true}，并调用 \texttt{notify\_all()} 唤醒所有等待中的消费者线程，从而实现高效且无伪唤醒的同步。
 
-第二种是忙等待（busy wait）模式。在编译期启用 \texttt{BUSY\_WAIT} 宏时，\texttt{wait()} 采用自旋方式，
+第二种是忙等待（busy wait）模式。在配置 \texttt{enable\_busy\_wait} 时，\texttt{wait()} 采用自旋方式，
 通过不断轮询 \texttt{finished\_} 的值并执行 \texttt{\_mm\_pause()} 来降低总线竞争和功耗。
 这种方式避免了阻塞所带来的调度延迟，适合对延迟极为敏感、且事件预计会在极短时间内完成的场景。通过 acquire/release 内存序，
 消费者在检测到事件完成后能够正确观察到生产者线程对共享状态的所有更新。
@@ -235,20 +236,18 @@ public:
 通过 C++ 的动态多态分派到对应的底层实现。
 
 从应用视角来看，所有的发送流程都遵循固定语义：
-在给定标识符（\texttt{unique\_id}）、起始地址与长度后，接口层立即为这个传输构造一个 \texttt{Event} 并返回。
+在给定逻辑通道标识符（\texttt{unique\_id}）、起始地址与长度后，接口层立即为这个传输构造一个 \texttt{Event} 并返回。
 之后的所有工作均转交给链路执行器，包括请求的匹配、调度推进与最终的完成通知。
 在接收方向，\texttt{recv()} 采用完全对称的方式构造请求对象并交付底层处理。
 
-内部实现中，采用了基于 moodycamel 的并发多生产者多消费者队列（ConcurrentQueue）作为接口层与执行器之间的消息传递数据结构。
+采用 moodycamel ConcurrentQueue \cite{concurrentqueue_repo} 作为并发多生产者多消费者队列的实现，用于在接口层与执行器之间传递数据。
 对于 RDMA 场景，该队列承载由应用层 \texttt{send()} / \texttt{recv()} 产生的本地请求，
 并交由执行器在 \texttt{poll()} 阶段取出，实现严格的单线程状态推进语义；
 对于 NVLink 场景，队列则承担本地命令缓存角色，与来自进程间共享内存 SPSC 队列的远端命令一并进入匹配逻辑。
 ConcurrentQueue 的无锁特性保证了接口层的请求提交端完全无阻塞，不会因后台执行器的处理速度而影响应用层的前向执行通道；
-同时，其基于 C++ 原子语义的实现确保不同线程间的生产-消费关系具有清晰的内存可见性边界，
-避免出现乱序加载导致的请求丢失或重复消费。
 
 接口层与运行时之间的边界十分清晰。运行时不会干预 \texttt{send()} / \texttt{recv()} 的逻辑构造，
-也不关心底层使用的是 RDMA libibverbs 还是通过 NVLink 的进行跨 GPU 的内存拷贝。
+也不关心底层使用的是 GPUDirect RDMA 还是通过 NVLink 的进行跨 GPU 的内存拷贝。
 运行时仅负责保证 \texttt{poll()} 方法在绑定线程上按固定频率执行，
 接口层则在 \texttt{poll()} 中调用底层执行器的对应方法，使得真正的数据面与控制面推进逻辑在执行器内部完成，
 而接口层始终保持无状态、轻量级的请求入口角色。
@@ -265,7 +264,7 @@ ConcurrentQueue 的无锁特性保证了接口层的请求提交端完全无阻�
 
 RDMA 链路执行器的实现分为两层：
 底层的 \texttt{rdma\_util} 封装 \texttt{libibverbs} 接口并以 RAII 管理 RDMA 资源，
-上层的 \texttt{executor\_rdma} 则利用这些抽象构建发送端 \texttt{RdmaSender}、
+上层的 RDMA 链路执行器模块 \texttt{executor\_rdma} 则利用这些抽象构建发送端 \texttt{RdmaSender}、
 接收端 \texttt{RdmaRecver} 以及维护 GPUDirect RDMA 一致性的 \texttt{RdmaFlusher}。
 初始化阶段的核心任务包括：创建 RDMA 基础资源、完成 QP 握手、分配控制面缓冲区及 MR 注册。
 
@@ -321,7 +320,7 @@ public:
 
 \paragraph{QP 握手与状态迁移}
 
-可靠连接队列对（RCQP）要进入可通信状态，必须经历 INIT $\rightarrow$ RTR $\rightarrow$ RTS 的三段状态迁移，
+可靠连接队列对（Reliable-Connection Queue Pair，RCQP）要进入可通信状态，必须经历 INIT $\rightarrow$ RTR $\rightarrow$ RTS 的三段状态迁移，
 由于这一步要求通信双方根据对端配置进行状态修改，因此也被称为“握手”。
 \texttt{rdma\_util} 通过通信双方的 QP 交换 \texttt{HandshakeData}
 并且显式调用 \texttt{RcQueuePair::bring\_up()} 完成这一握手过程，
@@ -371,7 +370,7 @@ RDMA Write with Imm 在 CPU 侧产生 CQE 仅说明该写入请求在 RNIC 侧�
 因此，若应用直接将 CQE 作为“数据可消费”的判据，则在极端情况下可能观察到旧值或不完整数据。
 
 为此，\sysname 在接收端引入 \texttt{RdmaFlusher}，通过额外插入一条后继 RDMA Read 建立必要的顺序关系：
-RDMA 链路执行器在初始化阶段基于环回 QP 构造了一个 Flusher，该 QP 的发送与接收都指向自己；
+RDMA 链路执行器在初始化阶段基于本地环回（loopback）的 RCQP 构造了一个 Flusher，该 QP 的发送与接收都指向自己；
 接收端在检测到“最后一个分片对应的 RDMA Write with Imm 完成”后，不立即触发事件完成，
 而是将该请求交由 Flusher 处理；
 Flusher 对同一 GPU 内存区域发起一次小规模 RDMA Read，
@@ -380,7 +379,7 @@ Flusher 对同一 GPU 内存区域发起一次小规模 RDMA Read，
 利用 PCIe/RDMA 路径上的顺序保证，后继 Read 等价于一道控制面“栅栏”，
 PCIe 会保证所有先前写入的数据在此 READ 之后对 GPU 可见，从而为上层提供一致的完成语义；
 并可通过批量处理或仅对最后分片执行 Flush 等策略来减少额外的控制开销。
-利用这种读-写屏障方法可以有效提供一致的完成语义，而无需对现有网络协议和硬件做更改 
+利用这种读-写屏障方法可以有效提供一致的完成语义，而无需对现有网络协议和硬件做更改
 
 \begin{figure}[htbp]
     \centering
@@ -411,13 +410,13 @@ auto flusher = RdmaFlusher::create(std::move(qp)).unwrap();
 发送端 \texttt{RdmaSender} 的运行主逻辑封装在 \texttt{poll()} 中，通过依次调用四个内部函数推进状态：
 
 \paragraph{\texttt{drain\_remote\_recv\_requests()}}
-负责从 RDMA Recv 队列取出由接收端发来的 \texttt{RdmaTicket}，
+负责从 RDMA 接收队列取出由接收端发来的 \texttt{RdmaTicket}，
 并将其整理为按 \texttt{unique\_id} 逻辑通道分组的待匹配队列。具体流程如下：
 
-首先调用 \texttt{poll\_recv\_cq\_once()} 批量轮询接收完成事件，然后对每个成功的 RECV，
+首先调用 \texttt{poll\_recv\_cq\_once()} 批量轮询接收完成事件，然后对每个成功的 RDMA Recv，
 从接收缓冲区中拷贝出对应的 \texttt{RdmaTicket}，
 按照 \texttt{unique\_id} 为键插入到 \texttt{pending\_remote\_recv\_request\_map\_} 中，为后续的匹配与发送做准备，
-同时立即向网卡 Recv 队列重新投递 RECV 工作请求，保持网卡始终有充足槽位可以使用，在不阻塞 CQ 的前提下高效处理控制面请求。
+同时立即向网卡接收队列重新投递 RDMA Recv 工作请求，保持网卡始终有充足槽位可以使用，在不阻塞 CQ 的前提下高效处理控制面请求。
 
 \paragraph{\texttt{drain\_local\_send\_requests()}}
 用于从应用接口层的并发队列中取出本地发送请求，也将其转换为按 \texttt{unique\_id} 逻辑通道分组的待发送队列。
@@ -539,11 +538,11 @@ auto flusher = RdmaFlusher::create(std::move(qp)).unwrap();
     \label{fig:wrid-encoding}
 \end{figure}
 
-\paragraph{\texttt{RdmaRecver::poll()}} 接收端 \texttt{poll()} 的运行逻辑与发送端对称，
+接收端 \texttt{RdmaRecver::poll()} 的运行逻辑与发送端对称，
 其核心目标是在控制面与数据面之间推进接收路径的状态机。
 该过程可分为三个阶段，对应算法~\ref{alg:rdma-recver-poll} 所示的批量命令提取、接收缓冲区发布以及完成事件处理。
 
-首先算法会尝试从并发队列中批量获取最多 \texttt{kMagic} 条命令，
+首先，算法会尝试从并发队列中批量获取多条命令，命令数量上限为可配置参数 \texttt{kMagic}，
 每条命令均携带一个 \texttt{RdmaTicket} 以及其关联的 \texttt{Event}。
 执行器将这个 ticket 按到达顺序插入待处理队列，用于后续 WR 槽位的顺序消耗；
 同时按照逻辑通道标识符 \texttt{unique\_id}
@@ -680,13 +679,13 @@ private:
   NvlinkCopier copier_;
 };
     \end{minted}
-    \caption{NVLink 链路执行器}
+    \caption{NVLink 链路执行器定义}
     \label{fig:nvlink-executor}
 \end{figure}
 
 \subsection{跨进程通信内存访问机制}
 
-NVLink 链路围绕 CUDA IPC 提供的跨进程访问和 Peer Access功能构建\cite{nvidia2025cudipc,nvidia_nvlink_nvswitch}。
+NVLink 链路围绕 CUDA IPC 提供的跨进程访问和 Peer Access 功能构建\cite{nvidia2025cudipc,nvidia_nvlink_nvswitch}。
 发送方在应用层调用 \texttt{send()} 时，
 通过 \texttt{cudaIpcGetMemHandle()} 将本地 GPU 缓冲区封装为 \texttt{cudaIpcMemHandle\_t} 并传给接收方；
 接收方在拿到该 handle 之后，首先调用 \texttt{cudaIpcOpenMemHandle()}
@@ -739,9 +738,9 @@ struct alignas(8) NvlinkAck {
 NVLink 执行器的请求的匹配与调度逻辑与 RDMA 链路的类似，同样采用 ``远端发送请求 + 本地接收请求'' 的双队列配对模式。
 不同之处在于，NVLink 执行器采用``发送端发起''的模式，而请求匹配和调度的逻辑主要集中在接收端，
 
-发送端首先调用 \texttt{send()} 发起通信请求，从本地缓存查找可用的 CUDA IPC Mem Handle，
+发送端首先调用 \texttt{send()} 发起通信请求，从本地缓存查找可用的 IPC Handle，
 如果不存在，则根据配置情况决定是否调用 \texttt{cudaIpcGetMemHandle()} 创建新的 handle 并缓存。
-获取到 handle 之后，将相对 CUDA IPC Mem Handle 的起始地址偏移量、
+获取到 IPC Handle 之后，将相对这个 handle 的起始地址偏移量、
 长度以及逻辑通道标识符 \texttt{unique\_id} 打包为 \texttt{NvlinkSendTicket}，写入跨进程 SPSC 队列；
 同时在 \texttt{pending\_send\_event\_map\_} 中插入一条待完成的 \texttt{Event}。
 
@@ -759,16 +758,13 @@ NVLink 执行器的请求的匹配与调度逻辑与 RDMA 链路的类似，同�
 在这一设计下 NVLink 接收端的控制面完全工作在 CPU 上，而所有 GPU 数据面操作则推迟到 Copier 的线程中执行。
 事件语义与 RDMA 链路保持对齐，应用层始终在发送或接收请求对应的 \texttt{Event} 上等待，直到跨 GPU 内存拷贝完成后才被通知。
 
-\subsection{数据面实现}
-
-\subsubsection{拷贝线程执行流程}
+\subsection{拷贝线程执行流程}
 
 接收端链路执行器持有 \texttt{copy\_task\_queue\_} 的一端，并持续向其中注入拷贝任务；
 拷贝线程从另一端取出拷贝任务并执行。
 
 GPU 指针的跨进程可见性由 \texttt{NvlinkCopier} 管理，在创建 Copier 对象时，
-构造函数在指定的 \texttt{device} 上创建 CUDA primary context，
-并初始化一个专用的非阻塞 \texttt{cudaStream\_t}；
+构造函数在指定的 \texttt{device} 上创建 CUDA Context，并初始化一个专用的非阻塞 CUDA Stream；
 随后启动后台工作线程运行无限循环，循环的每一轮都尝试获取拷贝任务，并执行 GPU-to-GPU 拷贝。
 其处理单个任务时流程如下：
 
@@ -783,10 +779,10 @@ GPU 指针的跨进程可见性由 \texttt{NvlinkCopier} 管理，在创建 Copi
     \item 调用 \texttt{cudaIpcCloseMemHandle()} 关闭远端指针映射。
 \end{enumerate}
 
-通过将 CUDA IPC handle 的管理逻辑集中在 Copier 内部，\sysname 将跨进程 GPU 指针管理复杂度屏蔽，
+通过将 CUDA IPC Memory Handle 的管理逻辑集中在 Copier 内部，\sysname 将跨进程 GPU 指针管理复杂度屏蔽，
 保证了 handle 生命周期与数据传输严格绑定。
 
-\subsubsection{CUDA IPC Memory Handle 性能优化}
+\subsection{IPC Handle 缓存优化}
 
 \paragraph{性能开销分析}
 从操作系统层面看，\texttt{cudaIpcOpenMemHandle()} 并非简单的“反序列化指针”，
@@ -802,19 +798,19 @@ GPU 指针的跨进程可见性由 \texttt{NvlinkCopier} 管理，在创建 Copi
 相对而言，\texttt{cudaMemcpyAsync()} 的开销主要与数据量相关，
 而打开/关闭的固定成本更高，因此在小消息场景下尤为显著。
 
-如图 ~\ref{fig:cuda-ipc-overhead} 所示，打开/关闭 CUDA IPC Handle 的延迟极高，
+如图 ~\ref{fig:cuda-ipc-overhead} 所示，打开/关闭 CUDA IPC Memory Handle 的延迟极高，
 并且随着被映射内存区域增大呈上升趋势：当映射的 buffer 足够大时，单次打开/关闭甚至达到毫秒级，
 这会直接限制 \sysname 在 NVLink 数据面的端到端吞吐，造成显著的 GPU 地址空间管理压力。
 
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=0.8\linewidth]{figures/cuda_ipc_open_close_overhead_vs_size.png}
-    \caption{CUDA IPC Open/Close 开销}
+    \caption{CUDA IPC Memory Handle 的打开/关闭开销}
     \label{fig:cuda-ipc-overhead}
 \end{figure}
 
 \paragraph{缓存复用的优化思路}
-针对上述瓶颈，\sysname 在数据面引入IPC 映射缓存：
+针对上述瓶颈，\sysname 在数据面引入 IPC Handle 映射缓存：
 对于同一个发送端导出的 \texttt{cudaIpcMemHandle\_t}，接收端不再在每个任务中重复打开/关闭，
 而是在首次遇到该 handle 时执行一次 \texttt{cudaIpcOpenMemHandle()}，
 将得到的远程内存基地址缓存起来，后续所有属于该 buffer 的拷贝任务直接复用该映射指针；
@@ -830,5 +826,5 @@ GPU 指针的跨进程可见性由 \texttt{NvlinkCopier} 管理，在创建 Copi
 在链路执行器部分，本章详细展开了 RDMA 执行器的资源初始化、控制面缓冲区与 MR 注册、批处理发送与接收路径，
 并通过 \texttt{RdmaFlusher} 进一步保证 GPUDirect RDMA 场景下的数据可见性与一致完成语义；
 同时，本章给出了 NVLink 执行器在节点内跨进程场景下的控制面队列组织、后台拷贝线程推进方式，
-以及通过 CUDA IPC 映射缓存复用降低 open/close 开销的关键优化。
+以及通过 CUDA IPC Memory Handle 映射缓存复用降低 open/close 开销的关键优化。
 通过上述实现，\sysname 在保持统一接口的同时实现了面向 RDMA 与 NVLink 的高效、可扩展且 SM-free 的通信控制面与数据面协同。

@@ -28,7 +28,7 @@ EP 则专为稀疏激活的混合专家（Mixture of Experts, MoE）架构设计
 随着推理系统的不断演进，又进一步演进出了预填充-解码分离（Prefill-Decode Disaggregation, PD 分离）推理架构\cite{distserve_paper,splitwise_paper}。
 该架构将推理流程分为计算密集型的预填充（Prefill）阶段和内存密集型的解码（Decode）阶段，并将它们分离到不同的硬件资源上，
 在预填充完成后，需要将产生的键值缓存（KV Cache）从预填充节点传输到解码节点，从而实现对两个阶段的独立优化。
-PD 分离系统相比于预填充-解码共置的 PD 混合（Prefill-Decode Colocation, PD 混合）系统降低了首个令牌时间（Time to First Token, TTFT），提升了系统的令牌吞吐（Token Throughput）。
+PD 分离系统相比于预填充-解码混合（Prefill-Decode Colocation, PD 混合）系统降低了首个令牌时间（Time to First Token, TTFT），提升了系统的令牌吞吐（Token Throughput）。
 然而，PD 分离中 KV Cache 的跨界点迁移对于网络传输性能提出了更高的要求，尤其依赖于高带宽、低时延的通信机制。
 
 此外，在模型即服务（Model-as-a-Service, MaaS）\cite{blitzscale_paper,serverlessllm_paper} 的云原生部署环境中，云服务商为了提高资源利用率，可能会采用模型按需部署的方式，
@@ -36,7 +36,7 @@ PD 分离系统相比于预填充-解码共置的 PD 混合（Prefill-Decode Col
 在进行模型扩容时的关键点在于加速模型推理实例的启动速度，其中模型参数加载的时间占据了实例启动时间的主要部分。
 为了加速模型参数加载速度，云服务商采用通过网络进行参数传输的优化方式，将模型参数从一些正在运行的 GPU 实例传输到空闲的 GPU 实例上，
 极大降低了模型推理服务的启动时间。
-在通过网络加载参数的过程中，由于模型参数规模较大，涉及到大量节点内、节点见的网络通信，对通信库的性能提出了更高的要求。
+在通过网络加载参数的过程中，由于模型参数规模较大，涉及到大量节点内、跨节点的网络通信，对通信库的性能提出了更高的要求。
 
 为了应对大模型推理场景中的各种不同的通信需求，学术界和工业界提出了多种不同的 GPU 通信方案，包括 NCCL、NVSHMEM、UCCL-P2P、Mooncake 等\cite{nccl_repo,hu2024demystifyingnccl,nvshmem_repo,uccl_repo,uccl_paper,Mooncake_repo,mooncake_paper,gloo_repo,amd2025rccl,intel2024oneccl}。
 在大模型推理系统中，通信库一方面需要对开发者提供易用的编程接口，另一方面需要针对不同的硬件拓扑和通信模式进行优化，以最大化通信性能。
@@ -60,7 +60,7 @@ PD 分离系统相比于预填充-解码共置的 PD 混合（Prefill-Decode Col
 NCCL（NVIDIA Collective Communication Library）\cite{nccl_repo,hu2024demystifyingnccl}是 NVIDIA 推出的 GPU 集合通信库，
 主要面向多 GPU 与多节点环境下的深度学习训练与高性能计算任务。
 其核心目标是为分布式系统提供高效、可扩展的集合通信（Collective Communication）原语，
-包括 AllReduce、AllGather、Reduce、Broadcast 等操作，从而降低通信开销、提升分布式训练效率。
+包括 AllReduce、AllGather、ReduceScatter、Broadcast 等操作，从而降低通信开销、提升分布式训练效率。
 NCCL 针对 NVIDIA GPU 架构进行了深度优化，充分利用 GPU 之间的高速互联技术（如 NVLink\cite{nvidia_nvlink_nvswitch}）、网络互联技术（如 RDMA、GPUDirect RDMA\cite{nvidia2025gpudirectrdma}），
 实现数据在 GPU 内存之间的直接传输，显著减少冗余数据拷贝带来的性能损失。
 此外，NCCL 使用拓扑感知的通信算法，通过自动检测系统拓扑结构构建最优通信路径，确保在不同硬件配置下均能获得接近理论峰值的通信带宽。
@@ -108,7 +108,7 @@ NVSHMEM 是一种面向 GPU 的、基于 OpenSHMEM 标准的单边通信库\cite
 在跨节点 RDMA 场景下，NVSHMEM 引入了 IBGDA\cite{agostini2018gpudirectasync,nvidia2025gdrdoc}（InfiniBand GPU Direct Async）
 以实现“GPU 直驱网卡”的通信关键路径。
 图 ~\ref{fig:nvshmem-ibgda} 展示了 NVSHMEM IBGDA 跨节点 RDMA 通信流程。
-与传统由 CPU 代理线程（proxy）提交/敲门铃不同，IBGDA 将控制面与数据面尽可能下沉到 GPU：
+与传统由 CPU 代理线程（proxy thread）触发 RNIC 工作流程不同，IBGDA 将控制面与数据面尽可能下沉到 GPU：
 GPU 上的 SM 直接在 GPU 内存中构造 NIC 的工作描述符，并将其写入位于 GPU 内存的工作队列（WQ），
 同时更新 doorbell record（DBR，同样位于 GPU 内存），
 随后对映射到 CUDA 地址空间的 RNIC Doorbell 寄存器（PCIe BAR/MMIO）执行写操作以“敲门铃”，触发 RNIC 工作流程。
@@ -128,7 +128,7 @@ RNIC 在收到 doorbell 后，利用 GPUDirect RDMA 直接从 GPU 内存中读�
 
 \paragraph{UCCL-P2P}
 UCCL-P2P \cite{uccl_paper,uccl_repo} 项目是加州大学伯克利分校的 Sky Computing Lab 提出的高性能 KV Cache 传输引擎，
-提供了 SM-free 的特性，轻量级的项目代码，以及易用性强的编程接口。
+提供了不占用流式多处理器（SM-free）的特性，轻量级的项目代码，以及易用性强的编程接口。
 UCCL-P2P 使用 GPUDirect RDMA 技术实现高性能的跨节点 KV Cache 传输，
 与 NCCL 不同的是 UCCL-P2P通过控制面卸载\cite{uccl_kv_transfer_engine_blog}（Control Plane Offloading）技术，
 完全消除了 GPU SM 在数据传输过程中的参与，避免了通信任务与计算任务的资源竞争，从而提升了大模型推理系统的整体性能。
@@ -148,7 +148,7 @@ UCCL-P2P 使用 GPUDirect RDMA 技术实现高性能的跨节点 KV Cache 传输
 通过 GPU 的拷贝引擎（Copy Engine，CE）避免了直接 Load/Store 带来的 SM 资源占用。
 
 \sysname 实现了异步任务运行时，通过后台工作线程（Worker Thread）处理通信任务的控制面逻辑，驱动数据面的执行。
-并且实现了基于优先级且支持抢占的任务调度器，能够根据不同通信任务的优先级动态调整带宽分配策略，从而提升延迟敏感任务的性能。
+并且实现了基于优先级且支持抢占的任务调度，能够根据不同通信任务的优先级动态调整带宽分配策略，从而提升延迟敏感任务的性能。
 \sysname 通过维护任务队列，通过入队函数和出队函数的接口和运行时交互，实现任务的调度。
 
 基于控制面卸载技术和优先级任务调度器，使用 C++ 语言实现了 \sysname 通信库。

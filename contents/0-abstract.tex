@@ -4,32 +4,36 @@
   随着大语言模型参数规模增长，分布式推理对通信带宽与低干扰提出更高要求。
   现有 GPU 通信库在推理负载下常将通信控制逻辑置于 GPU 侧，
   易与前台算子争用计算资源，且难以按流量重要性调度，导致吞吐受限并放大尾延迟。
-  本文面向该场景设计并实现高性能通信库\sysname。
+  本文面向该场景设计并实现高性能通信库\sysname{}。
 
-  \sysname 以控制面完全卸载为核心，将通信发起与调度交由 CPU 后台线程处理，GPU 侧仅负责数据搬运；
+  \sysname{} 以控制面完全卸载为核心，将通信发起与调度交由 CPU 后台线程处理，GPU 侧仅负责数据搬运；
   跨节点采用 GPUDirect RDMA 实现显存到显存传输，
   节点内基于 CUDA 进程间通信并利用拷贝引擎驱动 NVLink，通过句柄缓存降低映射开销。
   为适配复杂流量，系统实现异步运行时与支持抢占的优先级调度器，并以统一的发送/接收接口屏蔽多链路差异。
 
-  实验表明 \sysname 在点对点通信的带宽与基准系统相当或更优。
-  同时本文进行了计算与通信重叠的测试，
-  在相同配置下 \sysname 对于计算任务性能无影响，基准系统计算性能损失最高约 17\%。
-  在端到端解码中相邻词元生成间隔分布更集中、更稳定。
-  说明 \sysname 可在保证高效传输的同时避免通信对计算的干扰，为高吞吐、低尾延迟推理提供通信基础。
+  实验表明 \sysname{} 在点对点通信的带宽与基准系统相当或更优。
+  同时本文针对计算与通信重叠的场景进行了系统测试，
+  在相同配置下 \sysname{} 对于计算任务性能无影响，基准系统计算性能损失最高约 17\%；
+  在端到端测试中，\sysname{} 相比于基准系统在 首令牌生成时间 和 相邻令牌生成间隔 指标上最多分别取得 16\% 和 6.9\% 的提升；
+  在解码过程中相邻令牌生成间隔分布更集中、更稳定。
+  说明 \sysname{} 可在保证高效传输的同时避免通信对计算的干扰，为高吞吐、低尾延迟推理提供通信基础。
 \end{abstract}
 
 \begin{abstract}[en]
-  As the parameter scale of large language models continues to grow, distributed inference places higher demands on communication bandwidth and low interference with computation.
-  Existing GPU communication libraries often keep communication control logic on the GPU under inference workloads, which can contend with foreground kernels for compute resources and makes it difficult to schedule traffic by importance, thereby limiting throughput and amplifying tail latency.
-  To address this, this thesis designs and implements a high-performance communication library, \sysname, for large-model inference.
+  As the parameter scale of large language models continues to grow, distributed inference imposes increasingly stringent requirements on communication bandwidth and low interference.
+  Existing GPU communication libraries commonly place communication control logic on the GPU under inference workloads,
+  which easily contends with foreground kernels for compute resources and makes it difficult to schedule traffic according to importance, thereby limiting throughput and exacerbating tail latency.
+  To address this scenario, this paper designs and implements a high-performance communication library, \sysname{}.
 
-  The key idea of \sysname{} is full control-plane offloading: communication initiation and scheduling are handled by CPU background threads, while the GPU is responsible only for data movement.
-  For inter-node communication, \sysname{} adopts GPUDirect RDMA to enable GPU memory-to-memory transfers.
-  For intra-node communication, it leverages CUDA inter-process communication and drives NVLink via copy engines, reducing mapping overhead through handle caching.
-  To accommodate complex traffic patterns, the system provides an asynchronous runtime and a preemptive priority scheduler, and exposes a unified send/receive interface to hide differences across multiple links.
+  The core design of \sysname{} is the control plane offloading: communication initiation and scheduling are handled by background CPU threads, while the GPU is responsible solely for data movement.
+  For inter-node communication, \sysname{} adopts GPUDirect RDMA to enable device-to-device memory transfers.
+  For intra-node communication, it is built upon CUDA IPC and leverages copy engines to drive NVLink, with handle caching employed to reduce mapping overhead.
+  To accommodate complex traffic patterns, the system implements an asynchronous runtime and a preemptive priority scheduler, and provides a unified send/receive interface to abstract away heterogeneity across multiple links.
 
-  Experiments show that \sysname{} achieves point-to-point bandwidth comparable to or better than the baseline system.
-  We further evaluate computation--communication overlap: under the same configuration, \sysname{} does not degrade compute performance, whereas the baseline incurs up to about 17\% compute slowdown.
-  In end-to-end decoding, the distribution of inter-token generation intervals is more concentrated and stable.
-  These results indicate that \sysname{} can maintain efficient data transfer while avoiding interference with computation, providing a communication foundation for high-throughput and low-tail-latency inference.
+  Experimental results show that \sysname{} achieves point-to-point communication bandwidth comparable to or better than the baseline system.
+  In addition, we conduct systematic evaluations under scenarios with overlapped computation and communication.
+  Under identical configurations, \sysname{} incurs no performance degradation to computation tasks, whereas the baseline system suffers up to approximately 17\% computation performance loss.
+  In end-to-end evaluations, compared with the baseline system, \sysname{} achieves improvements of up to 16\% and 6.9\% in time-to-first-token and time-between-tokens, respectively.
+  Moreover, during decoding, the distribution of time-between-tokens is more concentrated and stable.
+  These results demonstrate that \sysname{} can maintain efficient data transfer while avoiding interference between communication and computation, providing a solid communication foundation for high-throughput, low-tail-latency inference.
 \end{abstract}

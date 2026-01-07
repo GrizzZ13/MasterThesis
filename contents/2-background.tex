@@ -16,8 +16,8 @@
 二者共同实现对序列上下文信息的建模与非线性特征变换。
 
 Transformer 架构的核心在于注意力机制（Attention），
-该机制允许模型在处理某一词元（token）时，
-能够显式地建模其与输入序列中所有其他词元之间的相关性，
+该机制允许模型在处理某一令牌（token）时，
+能够显式地建模其与输入序列中所有其他令牌之间的相关性，
 从而有效捕捉长距离依赖关系，避免了传统序列模型中信息逐步传播所带来的性能瓶颈。
 在 Attention 层中，每个输入向量 \( x \in \mathbb{R}^{d_{\text{model}}} \)
 通过三组可学习的线性映射分别投影为查询（Query, \(Q\)）、键（Key, \(K\)）和值（Value, \(V\)）向量：
@@ -38,8 +38,7 @@ Transformer 架构的核心在于注意力机制（Attention），
 FFN 层紧随 Attention 层之后，主要负责对注意力机制聚合得到的上下文信息进行逐位置的非线性特征变换。
 该层通常由两个线性变换（全连接层）和一个非线性激活函数构成。
 具体而言，给定 Attention 层的输出 \( x \in \mathbb{R}^{d_{\text{model}}} \)，
-FFN 首先通过一个从 \( d_{\text{model}} \) 到 \( d_{\text{ff}} \) 的线性映射
-（通常 \( d_{\text{ff}} = 4 \times d_{\text{model}} \)），
+FFN 首先通过一个从 \( d_{\text{model}} \) 到 \( d_{\text{ff}} \) 的线性映射，
 随后施加如 GeLU 或 ReLU 等激活函数，
 并通过第二个线性映射将特征维度投影回原始空间。
 形式化地，FFN 可表示为：
@@ -55,15 +54,19 @@ FFN 首先通过一个从 \( d_{\text{model}} \) 到 \( d_{\text{ff}} \) 的线�
 因此具备良好的并行性，适合在 GPU 等硬件加速器上高效执行。
 
 Transformer架构在推理阶段存在显著的性能瓶颈。
-首先，标准注意力机制的计算复杂度随序列长度n呈平方方增长，即$O(n^2)$，
+首先，标准注意力机制的计算复杂度随序列长度n呈平方增长，即$O(n^2)$，
 当处理长文本时，计算成本会急剧上升，导致推理速度变慢。
 其次，Transformer在推理过程中会产生的巨大内存消耗：
-为了加速逐个生成新词元的自回归过程，避免重复计算先前已处理过的词元的K和V向量，通常采用空间换取时间的方式，
+为了加速逐个生成新令牌的自回归过程，避免重复计算先前已处理过的令牌的K和V向量，通常采用空间换取时间的方式，
 推理系统系统会将这些K和V矩阵缓存起来，形成所谓的“键值缓存”（KV Cache）\cite{aminabadi2022deepspeedinference,yu2022orca,kwon2023pagedattention}。
 KV Cache的大小与多个因素成正比：序列长度（Sequence Length）、批处理大小（Batch Size）、模型层数（Number of Layers）、
 注意力头的维度（Head Dimension）以及注意力头的数量（Number of KV Heads），
 其计算公式为
-$\text{cache\_size} = 2 \times \text{seq\_len} \times \text{batch\_size} \times \text{num\_layers} \times \text{num\_kv\_head} \times \text{head\_dim} \times \text{sizeof}(\text{dtype})$。
+% $\text{size} = 2 \times \text{seq\_len} \times \text{batch\_size} \times \text{num\_layers} \times \text{num\_kv\_head} \times \text{head\_dim} \times \text{sizeof}(\text{dtype})$。
+\[
+      \text{size} = 2 \times \text{seq\_len} \times \text{batch\_size} \times \text{num\_layers} \times \text{num\_kv\_head} \times \text{head\_dim} \times \text{sizeof}(\text{dtype})
+\]
+
 对于一个拥有数万亿参数的大模型而言，仅KV Cache的内存占用就可能超过模型本身的权重大小，
 成为限制上下文长度、批处理大小和并发请求数量的主要障碍。
 例如，一个Llama-3 70B模型在批处理大小为10、序列长度为8192的输入序列时，KV Cache本身就需要约 25GB 的显存。
@@ -72,7 +75,7 @@ KV Cache不仅是推理效率的核心，更是整个系统资源分配的关键
 为了应对这一挑战，现代大模型推理系统通常将整个推理过程划分为两个截然不同的阶段：预填充（Prefill）和解码（Decode）\cite{aminabadi2022deepspeedinference,yu2022orca}。
 预填充阶段是推理的初始步骤，系统一次性处理用户提供的完整输入提示（prompt），将其通过Transformer模型的所有层，
 最终生成用于后续生成的KV Cache。这个阶段涉及大量的矩阵-矩阵乘法运算，因此其本质上是一个计算密集型任务。
-相比之下，解码阶段则是一个顺序执行的过程，模型根据已有的KV Cache，逐个生成新的词元。每一步只处理一个新词元，
+相比之下，解码阶段则是一个顺序执行的过程，模型根据已有的KV Cache，逐个生成新的令牌。每一步只处理一个新令牌，
 利用缓存的K和V向量进行增量式的注意力计算，从而避免了对整个历史序列的重复计算。
 解码阶段的特点是内存密集型而非计算密集型，因为每次生成都需要从高速但容量有限的GPU显存中读取庞大的KV Cache数据。
 理解这两个阶段的根本差异至关重要，因为它们决定了优化策略的侧重点：
@@ -160,9 +163,7 @@ Prefill 节点负责批量处理输入提示，Decode 节点负责逐 token 生�
 KV Cache 传输的本质是“大规模张量迁移”，其通信需求与 KV Cache 的存储特性、传输时机紧密相关：
 
 \begin{itemize}
-      \item  超大规模与高带宽需求：KV Cache 的数据量
-            $2 \times \text{seq\_len} \times \text{batch\_size} \times \text{num\_layers} \times \text{num\_kv\_head} \times \text{head\_dim} \times \text{sizeof}(\text{dtype})$，
-            对于长序列、大批次的场景，单组 KV Cache 体积可达数十 GB。
+      \item  超大规模与高带宽需求：对于长序列、大批次的场景，单组 KV Cache 体积可达数十 GB。
             因此传输过程对带宽的需求极高，需依赖高吞吐通信技术（如 RDMA、NVLink）避免成为推理瓶颈；
       \item  延迟与一致性权衡：KV Cache 需在 Prefill 完成后、Decode 启动前全量传输完成，
             否则会导致 Decode 阶段阻塞，因此传输延迟直接影响端到端推理 latency；
@@ -193,21 +194,21 @@ RDMA 的本质并非简单地提升网络速度，而是从根本上改变了计
 为了确保安全性和资源隔离，RDMA 引入了内存区域（Memory Region, MR）和保护域（Protection Domain, PD）的概念。
 任何希望被其他节点通过 RDMA 访问的内存区域都必须先经过注册过程。注册时，应用程序会告知 RNIC 要使用的内存块的起始地址和长度。
 作为响应，RNIC 会将这些内存注册为锁页内存，防止它们在 RDMA 操作期间被操作系统换出，并将虚拟地址到物理地址的映射信息加载到自身的高速缓存中。
-同时，RNIC 会为该内存区域生成两个密钥：一个本地键（lkey），用于本机发起的 RDMA 操作；另一个远程键（rkey），用于其他节点进行远程访问。
+同时，RNIC 会为该内存区域生成两个密钥：一个本地密钥（lkey），用于本机发起的 RDMA 操作；另一个远程密钥（rkey），用于其他节点进行远程访问。
 rkey 就像一把授权钥匙，只有持有正确 rkey 的节点才能对该内存区域执行指定的 RDMA 操作，从而构成了第一道安全防线。
 保护域则为一组相关的 RDMA 资源（如多个 MR、QP、CQ 等）提供了一个更高层次的安全边界。
 只有属于同一个 PD 的资源才能相互协作，这有效防止了未经授权的跨域访问。
 
 RDMA API 提供了两类不同的通信模型。第一种是双边（Two-Sided）模型，其代表操作是 RDMA Send 和 RDMA Recv。
 这种模式类似于传统的 RPC 调用，要求通信双方协同工作。
-发送方将数据写入自己的应用缓冲区，并通过 \texttt{post\_send()} 将其作为一个 WR 提交到本地的 SQ；
+发送方将数据写入自己的发送缓冲区，并通过 \texttt{post\_send()} 将其作为一个 WR 提交到本地的 SQ；
 与此同时，接收方必须预先通过 \texttt{post\_recv()} 将自己期望接收数据的缓冲区作为一个 WR 提交到本地的 RQ，以做好准备。
 当数据包到达接收方时，RNIC 会自动将其放置在预先注册的接收缓冲区内，并向接收方的 CQ 中投递一个完成事件。
 随后，接收方 RNIC 会发送一个 ACK 包确认收到数据，发送方在收到这个 ACK 后，才会在自己的 CQ 中看到其发送 WR 的完成事件。
 这种方式虽然同步性好，但是引入了显著的 CPU 开销，接收方的 CPU 必须主动准备接收缓冲区，在高负载的情况下可能会导致 CPU 成为通信瓶颈。
 
-第二种是单边（One-Sided）模型，其代表操作是 RDMA Read、RDMA Write 和 RDMA Atomic，这是 RDMA 最开创性的一点。
-在这种模式下，通信仅由发起方（Initiator）单方面完成，整个过程无需目标节点（Responder）的 CPU 参与。
+第二种是单边（One-Sided）模型，其代表操作是 RDMA Read、RDMA Write 和 RDMA Atomic，这是 RDMA 最具备开创性的一点。
+在这种模式下，通信仅由发起方（Initiator）单方面完成，整个过程无需响应方（Responder）的 CPU 参与。
 发起方只需事先通过带外信道（Out-of-band Communication，通常基于 TCP 实现）获取到目标内存的虚拟地址和 \texttt{rkey}，
 之后即可通过一个 WR 直接读取或写入远程节点的内存。例如，在 RDMA Write 操作中，发起方的 RNIC 会直接从本地源内存读取数据，
 封装成网络包发送出去，目标节点的 RNIC 收到后，直接将数据写入指定的远程内存地址。
@@ -222,28 +223,24 @@ RDMA API 提供了两类不同的通信模型。第一种是双边（Two-Sided�
 \subsection{NVLink}
 
 NVLink \cite{nvidia_nvlink_nvswitch} 是 NVIDIA 开发的一种高性能芯片间互连技术，
-专为在 GPU 之间以及 GPU 与支持 NVLink 的 CPU（例如基于 IBM POWER 架构的处理器）之间提供高带宽、低延迟的数据传输而设计。
-相较于传统基于 PCIe 的通信机制，NVLink 显著提升了单节点内（intra-node）多加速器协同纵向扩展网络（scale-up network）的效率，
+专为在 GPU 之间提供高带宽、低延迟的数据传输而设计。
+相较于传统基于 PCIe 的通信机制，NVLink 显著提升了节点内（intra-node）多加速器协同纵向扩展网络（scale-up network）的效率，
 已成为大规模 AI 训练推理、高性能计算（HPC）和内存池化等场景中的关键互联基础设施。
 
-NVLink 采用点对点（point-to-point）的串行差分信令架构，每条链路由多对高速差分通道（lane pairs）组成，支持全双工双向通信。
+NVLink 采用点对点（Point-to-Point）的串行差分信令架构，每条链路由多对高速差分通道（lane pairs）组成，支持全双工双向通信。
 其物理层和协议栈经过专门优化，能够绕过传统系统总线，直接与 GPU 的内存子系统（包括 L2 缓存和统一内存地址空间）深度集成，
-从而显著降低主机与设备之间、以及设备与设备之间的数据搬运开销。
+从而显著降低设备与设备之间的数据搬运开销。
 
 NVLink 技术持续迭代演进。以当前主流的 NVLink 4.0（应用于 NVIDIA H100）为例，每 GPU 可配置最多 18 条 NVLink 链路，
 每链路最高可以提供单向 25 GB/s、双向 50 GB/s 的带宽，因此单 GPU 的 NVLink 总聚合带宽可达 900 GB/s。
-当与 NVSwitch 交换芯片协同工作时，NVIDIA 构建了全连接（all-to-all）通信拓扑结构。
-例如在 DGX H100 系统中，8 个 H100 GPU 通过 6 个第二代 NVSwitch 芯片互连，
-为任意两个 GPU 提供高达单向 225 GB/s、双向 450 GB/s 的通信带宽，有效消除了通信瓶颈。
-
 在最新的 NVIDIA Blackwell 架构（如 B200 和 GB200 Superchip）中，NVLink 技术进一步升级为 NVLink 5.0，
 该版本将每链路的单向带宽提升至 112.5 GB/s，双向达 225 GB/s，单 B200 GPU 配置 18 条链路时，
-总双向带宽可达 4.05 TB/s。在 GB200 Superchip 中，两个 B200 GPU 通过 18 条 NVLink 5.0 链路直连，
-内部双向带宽高达 3.6 TB/s，为超大规模模型训练和推理提供了前所未有的片内扩展能力。
+总双向带宽可达 4.05 TB/s，为超大规模模型训练和推理提供了前所未有的片内扩展能力。
 
 此外，NVLink 协议栈支持高级通信语义，包括远程内存访问（Remote Memory Access, RMA）、细粒度一致性协议，
-以及与集合通信操作（如 AllReduce、AllGather）深度集成的硬件加速机制。结合 NVSwitch 构建的 non-blocking、低延迟交换网络，
-NVLink 不仅实现了单节点内极致的 scale-up 性能，也为构建跨节点的 AI 超级计算机（如 NVIDIA DGX SuperPOD）奠定了高性能通信基础。
+以及与集合通信操作深度集成的硬件加速机制。
+结合 NVSwitch 构建的 non-blocking、低延迟交换网络，
+NVLink 不仅实现了单节点内极致的 scale-up 性能，也为构建超节点 AI 超级计算机奠定了高性能通信基础。
 
 \subsection{GPUDirect RDMA}
 
@@ -253,7 +250,16 @@ GPUDirect RDMA \cite{nvidia2025gpudirectrdma,nvidia2025gdrdoc} 是 NVIDIA 为提
 GDR 是构建高性能、可扩展的横向扩展（scale-out）AI 与 HPC 系统的核心通信基础设施。
 
 在传统通信模式下，跨节点 GPU 之间的数据传输需经历以下路径：
-源 GPU -> 主机内存（via PCIe DMA）-> 网络协议栈（CPU 参与）-> 目标主机内存 -> 目标 GPU（via PCIe DMA）。
+\[
+      \mathrm{GPU}_{\mathrm{src}}
+      \xrightarrow{\text{PCIe}}
+      \mathrm{Host\ Memory}_{\mathrm{src}}
+      \xrightarrow{\text{CPU / 网络协议栈}}
+      \mathrm{Host\ Memory}_{\mathrm{dst}}
+      \xrightarrow{\text{PCIe}}
+      \mathrm{GPU}_{\mathrm{dst}}
+\]
+
 这一过程不仅引入多次数据拷贝，还消耗宝贵的 CPU 资源与 PCIe 带宽。
 而 GDR 通过硬件与驱动协同，使得网络接口卡（NIC）能够直接注册 GPU 显存区域作为 Memory Region，
 并通过标准 RDMA 操作（如 RDMA Write / RDMA Read）直接访问该区域，实现“零拷贝”（zero-copy）的 GPU-to-GPU 通信。
@@ -262,7 +268,7 @@ GDR 的实现依赖于多个软硬件组件的紧密协同：
 \begin{itemize}
       \item \textbf{统一内存地址空间支持}：NVIDIA GPU 的统一虚拟地址（Unified Virtual Addressing, UVA）机制
             为 GPU 显存分配了全局可寻址的虚拟地址，使得 RDMA 网卡可通过地址映射直接定位显存页。
-      \item \textbf{内核旁路与内存注册}：通过 NVIDIA 的 \texttt{libnvidia-ml}（NVML）及内核驱动（如 \texttt{nvidia-peermem} 模块），
+      \item \textbf{内核旁路与内存注册}：通过 NVIDIA 的 \texttt{libnvidia-ml}（NVML）及内核驱动模块 \texttt{nvidia-peermem}，
             GPU 显存可被注册为 RDMA 可访问的内存区域（Memory Region, MR），并暴露给 RDMA verbs 接口。
       \item \textbf{PCIe 原子性与缓存一致性}：GPU 与 NIC 共享 PCIe 根复合体（Root Complex），
             并通过 PCIe ATS（Address Translation Services）和 PRS（Page Request Services）等扩展机制
